@@ -79,7 +79,8 @@
                         <div class="col-6"><label class="form-label">Other providers / second</label><input class="form-control" type="number" min="1" max="10" id="rateOther" value="1"></div>
                     </div>
                     <button class="btn btn-primary mt-3" id="saveVerificationSpeed"><i class="fa-solid fa-floppy-disk me-1"></i> Save limits</button>
-                    <p class="small text-muted mt-2 mb-0" id="verificationSpeedStatus">Admin-only settings. Changes apply to queued checks.</p>
+                    <p class="small text-muted mt-2 mb-2" id="verificationSpeedStatus">Admin-only settings. Changes apply to queued checks.</p>
+                    <div class="small" id="providerBackoffStatus" aria-live="polite"></div>
                 </div>
 
                 <div class="glass-card p-4">
@@ -211,6 +212,17 @@
             loadVerificationSpeed();
         });
 
+        function renderProviderBackoff(states) {
+            const el = document.getElementById('providerBackoffStatus');
+            const names = { gmail: 'Gmail', yahoo: 'Yahoo', microsoft: 'Microsoft', other: 'Other' };
+            el.innerHTML = '<strong>Provider protection:</strong> ' + Object.entries(names).map(([key, name]) => {
+                const state = states[key] || {};
+                return state.paused
+                    ? name + ' paused (' + state.resumeInSeconds + 's remaining)'
+                    : name + ' active';
+            }).join(' · ');
+        }
+
         async function loadVerificationSpeed() {
             const card = document.getElementById('verificationSpeedCard');
             try {
@@ -222,6 +234,7 @@
                 document.getElementById('rateYahoo').value = data.providerPerSecond.yahoo;
                 document.getElementById('rateMicrosoft').value = data.providerPerSecond.microsoft;
                 document.getElementById('rateOther').value = data.providerPerSecond.other;
+                renderProviderBackoff(data.providerBackoff || {});
             } catch (error) {
                 if (error.response?.status === 403) card.style.display = 'none';
                 else document.getElementById('verificationSpeedStatus').textContent = 'Could not load settings. Check your database connection.';
@@ -244,6 +257,7 @@
             try {
                 await axios.put('/api/verification-settings', payload);
                 status.textContent = 'Saved. New limits apply to queued checks.';
+                await loadVerificationSpeed();
             } catch (error) {
                 status.textContent = error.response?.data?.message || 'Could not save settings.';
             }
