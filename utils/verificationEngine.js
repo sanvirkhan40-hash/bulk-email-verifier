@@ -105,9 +105,12 @@ async function verifyWithReacherTimed(email) {
         } catch (_) {}
     }
 
-    const { data } = await axios.post(`${REACHER_BASE}/v0/check_email`, body, {
-        timeout: REACHER_TIMEOUT,
-    });
+const { data } = await axios.post(`${REACHER_BASE}/v0/check_email`, body, {
+    timeout: REACHER_TIMEOUT,
+    headers: process.env.REACHER_SECRET
+        ? { 'x-reacher-secret': process.env.REACHER_SECRET }
+        : {},
+});
     return mapReacherToReport(data, email);
 }
 
