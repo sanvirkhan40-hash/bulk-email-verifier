@@ -1,4 +1,5 @@
 const VerificationSettings = require('../models/VerificationSettings');
+const { getProviderBackoffStatus } = require('../utils/verificationLimiter');
 
 function isAdmin(req) {
     const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
@@ -17,6 +18,7 @@ const getVerificationSettings = async (req, res) => {
             globalPerSecond: settings.globalPerSecond,
             maxConcurrent: settings.maxConcurrent,
             providerPerSecond: settings.providerPerSecond,
+            providerBackoff: getProviderBackoffStatus(),
         });
     } catch (error) {
         res.status(500).json({ message: 'Could not load verification settings' });
