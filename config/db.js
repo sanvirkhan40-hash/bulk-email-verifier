@@ -1,3 +1,4 @@
+
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
@@ -8,28 +9,36 @@ const connectDB = async () => {
     if (process.env.MONGO_URI) {
         try {
             const conn = await mongoose.connect(process.env.MONGO_URI, {
-                serverSelectionTimeoutMS: 8000,
+                serverSelectionTimeoutMS: 15000,
             });
+
             dbReady = true;
-            console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+            console.log(`✅ Persistent MongoDB Connected: ${conn.connection.host}`);
             return;
         } catch (error) {
-            console.warn(`⚠️  MongoDB URI failed (${error.message}) — using in-memory DB`);
+            console.error(`❌ Persistent MongoDB connection failed: ${error.message}`);
+            throw error;
         }
+    }
+
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error('MONGO_URI is required in production. Refusing temporary database.');
     }
 
     try {
         mongod = await MongoMemoryServer.create({
             instance: { ip: '127.0.0.1' },
         });
-        const uri = mongod.getUri();
-        const conn = await mongoose.connect(uri, { serverSelectionTimeoutMS: 10000 });
+
+        const conn = await mongoose.connect(mongod.getUri(), {
+            serverSelectionTimeoutMS: 10000,
+        });
+
         dbReady = true;
-        console.log(`✅ In-Memory MongoDB ready at ${uri}`);
-        console.log('ℹ️  Data resets when you stop the server (no MONGO_URI set).');
-    } catch (fallbackError) {
-        console.error(`❌ MongoDB failed: ${fallbackError.message}`);
-        throw fallbackError;
+        console.log(`✅ Development MongoDB ready: ${conn.connection.host}`);
+    } catch (error) {
+        console.error(`❌ MongoDB failed: ${error.message}`);
+        throw error;
     }
 };
 
