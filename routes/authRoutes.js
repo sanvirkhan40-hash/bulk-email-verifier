@@ -1,8 +1,10 @@
+
 const express = require('express');
 const router = express.Router();
-const { registerUser, authUser } = require('../controllers/authController');
+const { authUser } = require('../controllers/authController');
 
-router.post('/register', registerUser);
+// Public registration disabled.
+// Only existing accounts can sign in.
 router.post('/login', authUser);
 
 module.exports = router;
