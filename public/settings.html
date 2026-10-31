@@ -61,6 +61,27 @@
                     </div>
                 </div>
 
+                <div class="glass-card p-4 mb-4" id="verificationSpeedCard" style="display:none;">
+                    <h5 class="mb-3 fw-bold"><i class="fa-solid fa-gauge-high me-2 gradient-text"></i>Verification Speed</h5>
+                    <p class="small text-muted">Conservative starting limits. These control how quickly new checks start and how many can run simultaneously.</p>
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="form-label">Global checks / second</label>
+                            <input class="form-control" type="number" min="1" max="20" id="globalPerSecond" value="1">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Max concurrent checks</label>
+                            <input class="form-control" type="number" min="1" max="20" id="maxConcurrent" value="2">
+                        </div>
+                        <div class="col-6"><label class="form-label">Gmail / second</label><input class="form-control" type="number" min="1" max="10" id="rateGmail" value="1"></div>
+                        <div class="col-6"><label class="form-label">Yahoo / second</label><input class="form-control" type="number" min="1" max="10" id="rateYahoo" value="1"></div>
+                        <div class="col-6"><label class="form-label">Microsoft / second</label><input class="form-control" type="number" min="1" max="10" id="rateMicrosoft" value="1"></div>
+                        <div class="col-6"><label class="form-label">Other providers / second</label><input class="form-control" type="number" min="1" max="10" id="rateOther" value="1"></div>
+                    </div>
+                    <button class="btn btn-primary mt-3" id="saveVerificationSpeed"><i class="fa-solid fa-floppy-disk me-1"></i> Save limits</button>
+                    <p class="small text-muted mt-2 mb-0" id="verificationSpeedStatus">Admin-only settings. Changes apply to queued checks.</p>
+                </div>
+
                 <div class="glass-card p-4">
                     <h5 class="mb-3 fw-bold"><i class="fa-solid fa-plug me-2 gradient-text"></i>Connection</h5>
                     <ul class="list-unstyled small text-muted mb-0">
@@ -187,6 +208,45 @@
             document.getElementById('profileEmail').value = user.email || '';
             renderCompareTable();
             checkEngineHealth();
+            loadVerificationSpeed();
+        });
+
+        async function loadVerificationSpeed() {
+            const card = document.getElementById('verificationSpeedCard');
+            try {
+                const { data } = await axios.get('/api/verification-settings');
+                card.style.display = '';
+                document.getElementById('globalPerSecond').value = data.globalPerSecond;
+                document.getElementById('maxConcurrent').value = data.maxConcurrent;
+                document.getElementById('rateGmail').value = data.providerPerSecond.gmail;
+                document.getElementById('rateYahoo').value = data.providerPerSecond.yahoo;
+                document.getElementById('rateMicrosoft').value = data.providerPerSecond.microsoft;
+                document.getElementById('rateOther').value = data.providerPerSecond.other;
+            } catch (error) {
+                if (error.response?.status === 403) card.style.display = 'none';
+                else document.getElementById('verificationSpeedStatus').textContent = 'Could not load settings. Check your database connection.';
+            }
+        }
+
+        document.getElementById('saveVerificationSpeed').addEventListener('click', async () => {
+            const status = document.getElementById('verificationSpeedStatus');
+            const value = id => Number(document.getElementById(id).value);
+            const payload = {
+                globalPerSecond: value('globalPerSecond'),
+                maxConcurrent: value('maxConcurrent'),
+                providerPerSecond: {
+                    gmail: value('rateGmail'),
+                    yahoo: value('rateYahoo'),
+                    microsoft: value('rateMicrosoft'),
+                    other: value('rateOther')
+                }
+            };
+            try {
+                await axios.put('/api/verification-settings', payload);
+                status.textContent = 'Saved. New limits apply to queued checks.';
+            } catch (error) {
+                status.textContent = error.response?.data?.message || 'Could not save settings.';
+            }
         });
 
         document.getElementById('refreshHealthBtn').addEventListener('click', checkEngineHealth);

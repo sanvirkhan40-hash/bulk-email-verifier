@@ -1,5 +1,6 @@
 const ValidationHistory = require('../models/ValidationHistory');
 const { verifyEmailCombined } = require('../utils/verificationEngine');
+const { runWithVerificationLimit } = require('../utils/verificationLimiter');
 const { parseBulkFile } = require('../utils/csvEmailParser');
 const fs = require('fs');
 
@@ -13,7 +14,7 @@ const verifySingleEmail = async (req, res) => {
     }
 
     try {
-        const result = await verifyEmailCombined(email);
+        const result = await runWithVerificationLimit(email, () => verifyEmailCombined(email));
 
         const history = await ValidationHistory.create({
             user: req.user._id,
@@ -42,12 +43,12 @@ const verifyBulkEmails = async (req, res) => {
         return res.status(400).json({ message: 'emails array is required' });
     }
 
-    const concurrency = Math.min(parseInt(process.env.BULK_CONCURRENCY || '3', 10), 5);
+    const workerCount = Math.min(emails.length, 20);
     const results = new Array(emails.length);
 
     async function verifyOne(email, index) {
         try {
-            const result = await verifyEmailCombined(email);
+            const result = await runWithVerificationLimit(email, () => verifyEmailCombined(email));
             await ValidationHistory.create({
                 user: req.user._id,
                 email,
@@ -68,10 +69,13 @@ const verifyBulkEmails = async (req, res) => {
         }
     }
 
-    for (let i = 0; i < emails.length; i += concurrency) {
-        const chunk = emails.slice(i, i + concurrency);
-        await Promise.all(chunk.map((email, j) => verifyOne(email, i + j)));
-    }
+    let nextIndex = 0;
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+        while (nextIndex < emails.length) {
+            const index = nextIndex++;
+            await verifyOne(emails[index], index);
+        }
+    }));
 
     res.json({ count: results.length, results });
 };
