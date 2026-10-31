@@ -37,31 +37,10 @@
                 <button type="submit" class="btn btn-brand w-100 py-2">
                     Sign In
                 </button>
-                <div class="text-center mt-3">
-                    <small class="text-muted">Need an account? <a href="#" id="toggleRegister" class="text-decoration-none">Register</a></small>
-                </div>
+                
             </form>
 
-            <form id="registerForm" class="d-none">
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Name</label>
-                    <input type="text" class="form-control" id="regName" required placeholder="John Doe">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Email address</label>
-                    <input type="email" class="form-control" id="regEmail" required placeholder="you@example.com">
-                </div>
-                <div class="mb-4">
-                    <label class="form-label fw-semibold">Password</label>
-                    <input type="password" class="form-control" id="regPassword" required>
-                </div>
-                <button type="submit" class="btn btn-success w-100 py-2 fw-bold" style="border: none; border-radius: 10px;">
-                    Create Account
-                </button>
-                <div class="text-center mt-3">
-                    <small class="text-muted">Already have an account? <a href="#" id="toggleLogin" class="text-decoration-none">Sign In</a></small>
-                </div>
-            </form>
+            
         </div>
     </div>
 
@@ -69,52 +48,31 @@
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script src="/js/engine-ui.js"></script>
     <script src="/js/main.js"></script>
-    <script>
-        const loginForm = document.getElementById('loginForm');
-        const registerForm = document.getElementById('registerForm');
+    
+<script>
+    const loginForm = document.getElementById('loginForm');
 
-        document.getElementById('toggleRegister').addEventListener('click', (e) => {
-            e.preventDefault();
-            loginForm.classList.add('d-none');
-            registerForm.classList.remove('d-none');
-        });
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
 
-        document.getElementById('toggleLogin').addEventListener('click', (e) => {
-            e.preventDefault();
-            registerForm.classList.add('d-none');
-            loginForm.classList.remove('d-none');
-        });
+        try {
+            const res = await axios.post('/api/auth/login', {
+                email: document.getElementById('email').value,
+                password: document.getElementById('password').value,
+            });
 
-        loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            try {
-                const res = await axios.post('/api/auth/login', {
-                    email: document.getElementById('email').value,
-                    password: document.getElementById('password').value,
-                });
-                localStorage.setItem('token', res.data.token);
-                localStorage.setItem('user', JSON.stringify({ name: res.data.name, email: res.data.email }));
-                window.location.href = '/dashboard.html';
-            } catch (err) {
-                showToast(err.response?.data?.message || 'Login failed', 'error');
-            }
-        });
+            localStorage.setItem('token', res.data.token);
+            localStorage.setItem('user', JSON.stringify({
+                name: res.data.name,
+                email: res.data.email
+            }));
 
-        registerForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            try {
-                const res = await axios.post('/api/auth/register', {
-                    name: document.getElementById('regName').value,
-                    email: document.getElementById('regEmail').value,
-                    password: document.getElementById('regPassword').value,
-                });
-                localStorage.setItem('token', res.data.token);
-                localStorage.setItem('user', JSON.stringify({ name: res.data.name, email: res.data.email }));
-                window.location.href = '/dashboard.html';
-            } catch (err) {
-                showToast(err.response?.data?.message || 'Registration failed', 'error');
-            }
-        });
-    </script>
+            window.location.href = '/dashboard.html';
+        } catch (err) {
+            showToast(err.response?.data?.message || 'Login failed', 'error');
+        }
+    });
+</script>
+
 </body>
 </html>
