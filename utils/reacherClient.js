@@ -1,6 +1,14 @@
+
 const axios = require('axios');
 
-const REACHER_BASE = process.env.REACHER_URL || 'http://localhost:8081';
+const REACHER_BASE = (process.env.REACHER_URL || 'http://localhost:8081').replace(/\/$/, '');
+const REACHER_SECRET = process.env.REACHER_SECRET || '';
+
+function reacherHeaders() {
+    return REACHER_SECRET
+        ? { 'x-reacher-secret': REACHER_SECRET }
+        : {};
+}
 
 function isErrorBlock(obj) {
     return obj && typeof obj === 'object' && obj.type === 'error';
@@ -29,17 +37,28 @@ function mapReacherToReport(data, email) {
             : 'The Email Address Syntax is incorrect',
     });
 
-    if (disposable) {
-        checks.push({ step: 'misc', passed: false, message: 'Disposable / temporary email domain detected' });
-    } else {
-        checks.push({ step: 'misc', passed: true, message: 'Not a known disposable domain' });
-    }
+    checks.push({
+        step: 'misc',
+        passed: !disposable,
+        message: disposable
+            ? 'Disposable / temporary email domain detected'
+            : 'Not a known disposable domain',
+    });
+
     if (misc.is_role_account) {
-        checks.push({ step: 'misc', passed: false, message: 'Role-based email account' });
+        checks.push({
+            step: 'misc',
+            passed: false,
+            message: 'Role-based email account',
+        });
     }
 
     if (!mx.accepts_mail || mxRecords.length === 0) {
-        checks.push({ step: 'mx', passed: false, message: 'No MX records found for domain' });
+        checks.push({
+            step: 'mx',
+            passed: false,
+            message: 'No MX records found for domain',
+        });
     } else {
         mxRecords.forEach(mx => {
             checks.push({
@@ -58,7 +77,9 @@ function mapReacherToReport(data, email) {
         checks.push({
             step: 'smtp',
             passed: deliverable,
-            message: deliverable ? 'SMTP mailbox confirmed (Reacher)' : 'SMTP mailbox not confirmed (Reacher)',
+            message: deliverable
+                ? 'SMTP mailbox confirmed (Reacher)'
+                : 'SMTP mailbox not confirmed (Reacher)',
             detail: deliverable
                 ? '250 OK / is_deliverable'
                 : `is_reachable: ${reachable}`,
@@ -68,6 +89,7 @@ function mapReacherToReport(data, email) {
     const domainValid = syntaxValid && mx.accepts_mail && !disposable;
 
     let mailboxVerified = 'no_smtp';
+
     if (reachable === 'safe' || deliverable) {
         mailboxVerified = 'yes';
     } else if (reachable === 'invalid' && smtpRan) {
@@ -77,10 +99,14 @@ function mapReacherToReport(data, email) {
     }
 
     const valid = mailboxVerified === 'yes';
+
     let verdictSummary = `${email} seems not to be valid`;
-    if (valid) verdictSummary = `${email} seems to be valid`;
-    else if (mailboxVerified === 'no_smtp' && domainValid) {
-        verdictSummary = `${email} — domain OK but mailbox could not be verified (SMTP blocked or unknown)`;
+
+    if (valid) {
+        verdictSummary = `${email} seems to be valid`;
+    } else if (mailboxVerified === 'no_smtp' && domainValid) {
+        verdictSummary =
+            `${email} — domain OK but mailbox could not be verified (SMTP blocked or unknown)`;
     }
 
     return {
@@ -109,7 +135,14 @@ function mapReacherToReport(data, email) {
 
 async function checkReacherHealth() {
     try {
-        const { data } = await axios.get(`${REACHER_BASE}/version`, { timeout: 5000 });
+        const { data } = await axios.get(
+            `${REACHER_BASE}/version`,
+            {
+                timeout: 5000,
+                headers: reacherHeaders(),
+            }
+        );
+
         return !!data;
     } catch (_) {
         return false;
@@ -118,13 +151,16 @@ async function checkReacherHealth() {
 
 async function verifyWithReacher(email) {
     const proxy = process.env.SMTP_PROXY;
+
     const body = {
         to_email: email,
         hello_name: 'reacher.app',
     };
+
     if (proxy) {
         try {
             const u = new URL(proxy);
+
             body.proxy = {
                 host: u.hostname,
                 port: parseInt(u.port || '1080', 10),
@@ -134,10 +170,20 @@ async function verifyWithReacher(email) {
         } catch (_) {}
     }
 
-    const timeout = parseInt(process.env.REACHER_TIMEOUT_MS || '45000', 10);
-    const { data } = await axios.post(`${REACHER_BASE}/v0/check_email`, body, {
-        timeout,
-    });
+    const timeout = parseInt(
+        process.env.REACHER_TIMEOUT_MS || '45000',
+        10
+    );
+
+    const { data } = await axios.post(
+        `${REACHER_BASE}/v0/check_email`,
+        body,
+        {
+            timeout,
+            headers: reacherHeaders(),
+        }
+    );
+
     return mapReacherToReport(data, email);
 }
 
