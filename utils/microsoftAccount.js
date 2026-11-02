@@ -47,6 +47,7 @@ async function applyToReport(report, email) {
     if (account.state === 'exists' && !report.valid) {
         report.valid = true;
         report.mailbox_verified = 'yes';
+        report.microsoft_unverified = false;
         report.verdict_summary = email + ' seems to be valid (Microsoft 365 account confirmed)';
         (report.checks = report.checks || []).push({
             step: 'account',
@@ -57,6 +58,7 @@ async function applyToReport(report, email) {
     } else if (account.state === 'missing' && !report.valid) {
         report.valid = false;
         report.mailbox_verified = 'no';
+        report.microsoft_unverified = false;
         report.verdict_summary = email + ' does not exist (Microsoft 365 account lookup)';
         (report.checks = report.checks || []).push({
             step: 'account',
