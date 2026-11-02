@@ -28,6 +28,18 @@ RUN cd reacher \
        fi \
     && echo "Patched: --single-process / --no-zygote removed"
 
+# Yahoo ships sessionIndex as JSON inside a <script> tag now, so the old
+# "<input type=hidden>" scrape never matches and every Yahoo check fails with
+# YahooError: NoSessionIndex. patch-yahoo.sed rewrites that extraction.
+RUN cd reacher \
+    && wget -qO /tmp/patch-yahoo.sed \
+        https://raw.githubusercontent.com/sanvirkhan40-hash/bulk-email-verifier/main/reacher-patched/patch-yahoo.sed \
+    && sed -i -f /tmp/patch-yahoo.sed core/src/smtp/yahoo/api.rs \
+    && if grep -q '<input type="hidden" value="(?P<sessionIndex>' core/src/smtp/yahoo/api.rs; then \
+         echo "ERROR: yahoo patch did not apply - check core/src/smtp/yahoo/api.rs"; exit 1; \
+       fi \
+    && echo "Patched: Yahoo sessionIndex extraction"
+
 # ---------------------------------------------------------------------------
 # 2. Compile (identical to upstream)
 # ---------------------------------------------------------------------------
