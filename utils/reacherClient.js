@@ -73,6 +73,16 @@ function mapReacherToReport(data, email) {
     const deliverable = smtp.is_deliverable === true;
     const reachable = data.is_reachable || 'unknown';
 
+    // Reacher reports a broken browser/SMTP attempt as an error block. Without
+    // this, the result is a silent "no_smtp" and the real reason is lost.
+    const smtpError = isErrorBlock(data.smtp) ? (data.smtp.error || {}) : null;
+    const smtpErrorIsObject = Boolean(smtpError) && typeof smtpError === 'object';
+    const smtpErrorType = smtpErrorIsObject ? (smtpError.type || '') : String(smtpError || '');
+    const smtpErrorMessage = smtpErrorIsObject ? (smtpError.message || smtpError.detail || '') : '';
+    const smtpErrorText = smtpError
+        ? `Reacher could not run the SMTP check: ${smtpErrorType || 'error'}${smtpErrorMessage ? ` — ${smtpErrorMessage}` : ''}`
+        : '';
+
     if (smtpRan) {
         checks.push({
             step: 'smtp',
@@ -83,6 +93,13 @@ function mapReacherToReport(data, email) {
             detail: deliverable
                 ? '250 OK / is_deliverable'
                 : `is_reachable: ${reachable}`,
+        });
+    } else if (smtpErrorText) {
+        checks.push({
+            step: 'smtp',
+            passed: false,
+            message: 'SMTP check could not run',
+            detail: smtpErrorText,
         });
     }
 
@@ -124,7 +141,8 @@ function mapReacherToReport(data, email) {
         smtp_host: mxRecords[0]?.host || '',
         smtp_response: smtpRan
             ? `is_reachable=${reachable}, is_deliverable=${deliverable}`
-            : '',
+            : smtpErrorText,
+        engine_error: smtpError ? `${smtpErrorType}: ${smtpErrorMessage}`.trim() : '',
         verdict_summary: verdictSummary,
         syntax_valid: syntaxValid,
         smtp_check_ran: smtpRan,
