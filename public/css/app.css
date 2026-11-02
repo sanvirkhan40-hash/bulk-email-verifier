@@ -649,3 +649,31 @@ html[data-theme="dark"] .side-link.is-active { color: var(--brand); }
     max-width: 460px;
 }
 .backend-card .limits-grid .input { width: 100%; }
+
+/* Limits modal */
+dialog.modal {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    width: min(700px, 94vw);
+    max-width: 94vw;
+}
+dialog.modal::backdrop { background: rgba(8, 12, 18, 0.55); }
+dialog.modal .modal-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+dialog.modal h3 { font-size: 17px; font-weight: 600; }
+dialog.modal .table th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-muted, #6d7683);
+    font-weight: 600;
+}
+dialog.modal .table td { vertical-align: middle; }
+dialog.modal .table input[disabled] { opacity: .45; }

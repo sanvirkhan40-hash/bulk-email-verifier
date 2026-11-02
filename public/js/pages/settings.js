@@ -179,11 +179,107 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
             `;
         }
 
+        function limitsSummary(b) {
+            if (!b.limitsOverridden) return 'follows the global limits';
+            const bits = [];
+            const rowText = (row, label) => {
+                if (!row) return null;
+                const parts = [];
+                if (row.perSecond !== null && row.perSecond !== undefined) parts.push(row.perSecond + '/s');
+                if (row.perMinute !== null && row.perMinute !== undefined) parts.push(row.perMinute + '/min');
+                if (row.perDay !== null && row.perDay !== undefined) parts.push(row.perDay + '/day');
+                if (!parts.length) return null;
+                return (label ? label + ' ' : '') + parts.join(' \u00b7 ');
+            };
+            const overall = rowText(b.limits, '');
+            if (overall) bits.push(overall);
+            PROVIDERS.forEach(name => {
+                const text = rowText(b.limits && b.limits.providers && b.limits.providers[name], PROVIDER_LABELS[name]);
+                if (text) bits.push(text);
+            });
+            return bits.join(' \u00b7 ') || 'own limits \u2014 unlimited';
+        }
+
+        const LIMIT_WINDOWS = [['perSecond', 'Per second'], ['perMinute', 'Per minute'], ['perDay', 'Per day']];
+        let limitsBackend = null;
+
+        function buildLimitsGrid() {
+            const grid = document.getElementById('limitsGrid');
+            if (!grid || grid.dataset.ready) return;
+            const rows = [{ key: 'overall', label: 'Overall' }].concat(PROVIDERS.map(name => ({ key: name, label: PROVIDER_LABELS[name] })));
+            grid.innerHTML = `
+                <table class="table">
+                    <thead><tr><th>Apply to</th>${LIMIT_WINDOWS.map(w => `<th>${w[1]}</th>`).join('')}</tr></thead>
+                    <tbody>
+                        ${rows.map(r => `<tr>
+                            <td class="fw-medium">${r.label}</td>
+                            ${LIMIT_WINDOWS.map(w => `<td><input class="input sm" data-scope="${r.key}" data-window="${w[0]}" placeholder="auto" style="width:74px"></td>`).join('')}
+                        </tr>`).join('')}
+                    </tbody>
+                </table>`;
+            grid.dataset.ready = '1';
+
+            document.getElementById('limitsCustom').addEventListener('change', event => {
+                grid.querySelectorAll('input').forEach(input => { input.disabled = !event.target.checked; });
+            });
+            document.getElementById('limitsCancel').addEventListener('click', () => {
+                document.getElementById('limitsDialog').close();
+            });
+            document.getElementById('limitsSave').addEventListener('click', async () => {
+                if (!limitsBackend) return;
+                const custom = document.getElementById('limitsCustom').checked;
+                try {
+                    if (!custom) {
+                        await axios.put('/api/reacher-backends/' + limitsBackend.id, { resetLimits: true });
+                    } else {
+                        const payload = { providers: {} };
+                        grid.querySelectorAll('input').forEach(input => {
+                            const raw = (input.value || '').trim();
+                            const value = raw === '' ? null : Number(raw);
+                            if (input.dataset.scope === 'overall') {
+                                payload[input.dataset.window] = value;
+                            } else {
+                                payload.providers[input.dataset.scope] = payload.providers[input.dataset.scope] || {};
+                                payload.providers[input.dataset.scope][input.dataset.window] = value;
+                            }
+                        });
+                        await axios.put('/api/reacher-backends/' + limitsBackend.id, { limits: payload });
+                    }
+                    document.getElementById('limitsDialog').close();
+                    showToast('Limits saved');
+                    await loadBackends();
+                } catch (error) {
+                    showToast((error.response && error.response.data && error.response.data.message) || 'Could not save limits', 'error');
+                }
+            });
+        }
+
+        function openLimitsModal(backend) {
+            buildLimitsGrid();
+            limitsBackend = backend;
+            document.getElementById('limitsName').textContent = backend.name;
+            const custom = Boolean(backend.limitsOverridden);
+            document.getElementById('limitsCustom').checked = custom;
+            document.querySelectorAll('#limitsGrid input').forEach(input => {
+                const scope = input.dataset.scope;
+                const key = input.dataset.window;
+                const source = scope === 'overall'
+                    ? backend.limits
+                    : (backend.limits && backend.limits.providers && backend.limits.providers[scope]);
+                const value = source ? source[key] : null;
+                input.value = value === null || value === undefined ? '' : value;
+                input.disabled = !custom;
+            });
+            document.getElementById('limitsDialog').showModal();
+        }
+
         function renderBackends(data) {
             backends = data.backends || [];
             const summary = document.getElementById('reacherSummary');
             const list = document.getElementById('backendsList');
             if (!list) return;
+
+            backendCache = backends;
 
             if (!backends.length) {
                 list.innerHTML = '<div class="notice">No backends yet. Add the URL of your Reacher service below.</div>';
@@ -207,21 +303,9 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
 
                         <div class="mt-2">${usageCell(b)}</div>
 
-                        <div class="backend-limits">
-                            <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
-                                <strong class="small">Limits for this Reacher</strong>
-                                <span class="small ${b.limitsOverridden ? 'text-warning' : 'text-muted'}">${b.limitsOverridden ? 'own limits — the global row is ignored' : 'following the global limits'}</span>
-                            </div>
-                            <div class="limits-grid">
-                                <label class="field"><span class="small text-muted">Per second</span><input class="input sm" data-role="perSecond" placeholder="auto" value="${b.limits?.perSecond ?? ''}"></label>
-                                <label class="field"><span class="small text-muted">Per minute</span><input class="input sm" data-role="perMinute" placeholder="auto" value="${b.limits?.perMinute ?? ''}"></label>
-                                <label class="field"><span class="small text-muted">Per day</span><input class="input sm" data-role="perDay" placeholder="auto" value="${b.limits?.perDay ?? ''}"></label>
-                            </div>
-                            <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
-                                <button class="btn sm primary" data-action="save-limits"><i class="fa-solid fa-check"></i>Save limits</button>
-                                ${b.limitsOverridden ? '<button class="btn sm" data-action="reset-limits"><i class="fa-solid fa-rotate-left"></i>Use global limits</button>' : ''}
-                                <span class="small text-muted">Empty box = use the global value for that window.</span>
-                            </div>
+                        <div class="backend-limits d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                            <div class="small"><span class="text-muted">Limits:</span> <span class="${b.limitsOverridden ? 'text-warning fw-medium' : ''}">${limitsSummary(b)}</span></div>
+                            <button class="btn sm" data-action="edit-limits"><i class="fa-solid fa-sliders"></i>Limits</button>
                         </div>
                     </div>
                 `).join('');
@@ -239,6 +323,8 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
                 if ((b.health || b.lastStatus || {}).ok && !b.locked) backends[index]._online = true;
             });
         }
+
+        let backendCache = [];
 
         async function loadBackends() {
             const card = document.getElementById('reacherCard');
@@ -299,6 +385,12 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
                 return;
             }
 
+            if (action === 'edit-limits') {
+                const backend = backendCache.find(item => item.id === id);
+                if (backend) openLimitsModal(backend);
+                return;
+            }
+
             if (action === 'save-limits') {
                 const readLimit = role => {
                     const el = row.querySelector('[data-role="' + role + '"]');
@@ -338,23 +430,22 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
                 return;
             }
             try {
-                const limitOf = id => {
-                    const raw = (document.getElementById(id).value || '').trim();
-                    return raw === '' ? null : Number(raw);
-                };
-                await axios.post('/api/reacher-backends', {
-                    name,
-                    url,
-                    secret,
-                    limits: {
-                        perSecond: limitOf('newPerSecond'),
-                        perMinute: limitOf('newPerMinute'),
-                        perDay: limitOf('newPerDay'),
-                    },
-                });
+                const { data } = await axios.post('/api/reacher-backends', { name, url, secret });
                 showToast('Backend added');
-                ['newName', 'newUrl', 'newSecret', 'newPerSecond', 'newPerMinute', 'newPerDay'].forEach(id => { document.getElementById(id).value = ''; });
+                ['newName', 'newUrl', 'newSecret'].forEach(id => { document.getElementById(id).value = ''; });
                 await loadBackends();
+
+                const created = backendCache.find(item => item.id === (data && data.id))
+                    || { id: data && data.id, name: name, limitsOverridden: false, limits: null };
+                document.getElementById('askName').textContent = name;
+                document.getElementById('askYes').onclick = () => {
+                    document.getElementById('askLimitsDialog').close();
+                    openLimitsModal(created);
+                };
+                document.getElementById('askNo').onclick = () => {
+                    document.getElementById('askLimitsDialog').close();
+                };
+                document.getElementById('askLimitsDialog').showModal();
             } catch (error) {
                 showToast(error.response?.data?.message || 'Could not add backend', 'error');
             }

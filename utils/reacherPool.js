@@ -66,12 +66,28 @@ function num(value, fallback) {
 function effectiveLimits(backend, settings) {
     const own = backend.limits || {};
     const has = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
-    const overridden = has(own.perSecond) || has(own.perMinute) || has(own.perDay);
+
+    // A provider row refines the Overall row for that provider only.
+    const providerLimits = {};
+    for (const name of ['gmail', 'yahoo', 'microsoft', 'other']) {
+        const row = (own.providers && own.providers[name]) || {};
+        if (!['perSecond', 'perMinute', 'perDay'].some(key => has(row[key]))) continue;
+        providerLimits[name] = {
+            perSecond: has(row.perSecond) ? Math.max(0, Number(row.perSecond)) : 0,
+            perMinute: has(row.perMinute) ? Math.max(0, Number(row.perMinute)) : 0,
+            perDay: has(row.perDay) ? Math.max(0, Number(row.perDay)) : 0,
+        };
+    }
+
+    const overridden = ['perSecond', 'perMinute', 'perDay'].some(key => has(own[key]))
+        || Object.keys(providerLimits).length > 0;
+
     if (overridden) {
         return {
             perSecond: has(own.perSecond) ? Math.max(0, Number(own.perSecond)) : 0,
             perMinute: has(own.perMinute) ? Math.max(0, Number(own.perMinute)) : 0,
             perDay: has(own.perDay) ? Math.max(0, Number(own.perDay)) : 0,
+            providerLimits,
             overridden: true,
         };
     }
@@ -79,6 +95,7 @@ function effectiveLimits(backend, settings) {
         perSecond: Math.max(0, num(settings?.globalPerSecond, 1)),
         perMinute: Math.max(0, num(settings?.globalPerMinute, 60)),
         perDay: Math.max(0, num(settings?.globalPerDay, 5000)),
+        providerLimits: {},
         overridden: false,
     };
 }
@@ -125,11 +142,25 @@ function commitStart(state, now) {
 function backendWait(backend, provider, now, settings) {
     const limits = effectiveLimits(backend, settings);
     const entry = usageEntry(backend.id);
-    return Math.max(
+
+    let wait = Math.max(
         secondWait(secondsState(backend, limits), limits.perSecond, now),
         minuteWait(entry.global, limits.perMinute, now),
         dayWait(entry.global, limits.perDay, now),
     );
+
+    // A provider row on this backend is an extra cap on top of its Overall row.
+    const own = limits.providerLimits[provider];
+    if (own) {
+        const state = entry.providers[provider] || (entry.providers[provider] = newWindow());
+        wait = Math.max(
+            wait,
+            secondWait(state, own.perSecond, now),
+            minuteWait(state, own.perMinute, now),
+            dayWait(state, own.perDay, now),
+        );
+    }
+    return wait;
 }
 
 function recordStart(backend, provider, now, settings) {

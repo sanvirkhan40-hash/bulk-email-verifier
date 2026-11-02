@@ -1,5 +1,13 @@
 const mongoose = require('mongoose');
 
+function providerLimitsSchema() {
+    return {
+        perSecond: { type: Number, default: null, min: 0, max: 50 },
+        perMinute: { type: Number, default: null, min: 0, max: 1000 },
+        perDay: { type: Number, default: null, min: 0, max: 200000 },
+    };
+}
+
 const ReacherBackendSchema = new mongoose.Schema({
     name: { type: String, required: true, trim: true, unique: true, maxlength: 80 },
     url: { type: String, required: true, trim: true, maxlength: 300 },
@@ -13,10 +21,19 @@ const ReacherBackendSchema = new mongoose.Schema({
     // Optional per-backend limits. null = follow the global rate limits.
     // When ANY value is set here, this backend ignores the global values
     // entirely and uses only what is set (missing pieces become unlimited).
+    // null everywhere = follow the global row. Any number here makes this
+    // Reacher use its own sheet instead of the global one. Provider rows
+    // refine the Overall row for that provider only.
     limits: {
         perSecond: { type: Number, default: null, min: 0, max: 50 },
         perMinute: { type: Number, default: null, min: 0, max: 1000 },
         perDay: { type: Number, default: null, min: 0, max: 200000 },
+        providers: {
+            gmail: providerLimitsSchema(),
+            yahoo: providerLimitsSchema(),
+            microsoft: providerLimitsSchema(),
+            other: providerLimitsSchema(),
+        },
     },
     lastStatus: {
         ok: { type: Boolean, default: false },

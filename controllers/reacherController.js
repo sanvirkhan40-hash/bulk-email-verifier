@@ -18,24 +18,75 @@ function validateUrl(raw) {
     return { url };
 }
 
-// Per-backend limits. Empty/null means "follow the global row". Setting any
-// value makes this backend ignore the global row entirely.
+// Per-backend limits. Empty/null means "follow the global row" for that window.
+// Any value makes this Reacher use its own sheet; provider rows refine the
+// Overall row for that provider.
+const LIMIT_PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
+const LIMIT_RANGES = { perSecond: [0, 50], perMinute: [0, 1000], perDay: [0, 200000] };
+
+function isLimitSet(value) {
+    return value !== null && value !== undefined;
+}
+
+function limitsAreOverridden(own = {}) {
+    if (['perSecond', 'perMinute', 'perDay'].some(key => isLimitSet(own[key]))) return true;
+    return LIMIT_PROVIDERS.some(name => {
+        const row = own.providers && own.providers[name];
+        return row && ['perSecond', 'perMinute', 'perDay'].some(key => isLimitSet(row[key]));
+    });
+}
+
+function normalizeWindow(raw, key, label) {
+    if (raw === undefined) return {};
+    if (raw === null || raw === '') return { value: null };
+    const number = Number(raw);
+    const range = LIMIT_RANGES[key];
+    if (!Number.isInteger(number) || number < range[0] || number > range[1]) {
+        return { error: `${label}${key} must be a whole number ${range[0]}-${range[1]}, or empty to follow global` };
+    }
+    return { value: number };
+}
+
 function normalizeOwnLimits(input) {
     if (input === null || input === undefined) return { value: undefined };
-    const ranges = { perSecond: [0, 50], perMinute: [0, 1000], perDay: [0, 200000] };
     const value = {};
-    for (const key of Object.keys(ranges)) {
-        if (!(key in input)) continue;
-        const raw = input[key];
-        if (raw === null || raw === '') { value[key] = null; continue; }
-        const number = Number(raw);
-        const range = ranges[key];
-        if (!Number.isInteger(number) || number < range[0] || number > range[1]) {
-            return { error: `${key} must be a whole number ${range[0]}–${range[1]}, or empty to follow global` };
+    for (const key of Object.keys(LIMIT_RANGES)) {
+        const result = normalizeWindow(input[key], key, '');
+        if (result.error) return result;
+        if ('value' in result) value[key] = result.value;
+    }
+    if (input.providers && typeof input.providers === 'object') {
+        value.providers = {};
+        for (const name of LIMIT_PROVIDERS) {
+            const source = input.providers[name];
+            if (!source || typeof source !== 'object') continue;
+            const row = {};
+            for (const key of Object.keys(LIMIT_RANGES)) {
+                const result = normalizeWindow(source[key], key, name + ' ');
+                if (result.error) return result;
+                if ('value' in result) row[key] = result.value;
+            }
+            value.providers[name] = row;
         }
-        value[key] = number;
     }
     return { value };
+}
+
+function limitsPayload(own = {}) {
+    return {
+        perSecond: own.perSecond ?? null,
+        perMinute: own.perMinute ?? null,
+        perDay: own.perDay ?? null,
+        providers: LIMIT_PROVIDERS.reduce((out, name) => {
+            const row = (own.providers && own.providers[name]) || {};
+            out[name] = {
+                perSecond: row.perSecond ?? null,
+                perMinute: row.perMinute ?? null,
+                perDay: row.perDay ?? null,
+            };
+            return out;
+        }, {}),
+    };
 }
 
 // Secrets never leave the server. The UI only learns whether one is stored.
@@ -49,12 +100,8 @@ function serialize(doc, health) {
         enabled: doc.enabled !== false,
         locked: doc.locked === true,
         order: doc.order || 0,
-        limits: {
-            perSecond: own.perSecond ?? null,
-            perMinute: own.perMinute ?? null,
-            perDay: own.perDay ?? null,
-        },
-        limitsOverridden: [own.perSecond, own.perMinute, own.perDay].some(v => v !== null && v !== undefined),
+        limits: limitsPayload(own),
+        limitsOverridden: limitsAreOverridden(own),
         usage: pool.getBackendUsage(String(doc._id)),
         hasSecret: Boolean(doc.secretEnc),
         secretStatus: !doc.secretEnc ? 'missing' : (canDecrypt(doc.secretEnc) ? 'ok' : 'unreadable'),
@@ -165,11 +212,20 @@ const updateBackend = async (req, res) => {
         if (locked !== undefined) doc.locked = locked === true;
         if (order !== undefined) doc.order = Number(order) || 0;
         if (resetLimits === true) {
-            doc.limits = { perSecond: null, perMinute: null, perDay: null };
+            doc.limits = { perSecond: null, perMinute: null, perDay: null, providers: {} };
         } else if (limits !== undefined) {
             const ownLimits = normalizeOwnLimits(limits);
             if (ownLimits.error) return res.status(400).json({ message: ownLimits.error });
-            doc.limits = { ...(doc.limits || {}), ...ownLimits.value };
+            const current = limitsPayload(doc.limits);
+            const next = { ...current, ...ownLimits.value };
+            if (ownLimits.value.providers) {
+                next.providers = { ...current.providers };
+                for (const name of Object.keys(ownLimits.value.providers)) {
+                    next.providers[name] = { ...(current.providers[name] || {}), ...ownLimits.value.providers[name] };
+                }
+            }
+            doc.limits = next;
+            doc.markModified('limits');
         }
 
         await doc.save();
