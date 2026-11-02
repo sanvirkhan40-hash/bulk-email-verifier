@@ -3,539 +3,220 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Settings - Bulk Email Verifier</title>
-    <meta name="description" content="Engine status, Reacher backends, rate limits, and profile settings.">
+    <title>Settings · Email Verifier</title>
+    <meta name="theme-color" content="#4f46e5">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="manifest" href="/site.webmanifest">
-    <meta name="theme-color" content="#6366f1">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/css/style.css">
+    <script>try{var m=localStorage.getItem('theme')||'system';var d=m==='dark'||(m==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light')}catch(e){}</script>
+    <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
-    <div id="toast-container" class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1050;"></div>
-
-    <div class="sidebar glass-card border-start-0 border-top-0 border-bottom-0 rounded-0">
-        <div class="sidebar-brand mb-4">
-            <a href="/dashboard.html" class="brand-link">
-                <img src="/favicon.svg" alt="" class="brand-icon" width="36" height="36">
-                <div class="brand-text">
-                    <span class="brand-title">Email Verifier</span>
-                    <span class="engine-badge brand-badge" data-engine-badge>truemail-go</span>
-                </div>
-            </a>
-        </div>
-        <nav class="nav flex-column px-2">
-            <a class="nav-link" href="/dashboard.html"><i class="fa-solid fa-chart-pie me-2"></i> Dashboard</a>
-            <a class="nav-link" href="/single.html"><i class="fa-solid fa-magnifying-glass me-2"></i> Single Verify</a>
-            <a class="nav-link" href="/bulk.html"><i class="fa-solid fa-file-csv me-2"></i> Bulk Verify</a>
-            <a class="nav-link" href="/history.html"><i class="fa-solid fa-clock-rotate-left me-2"></i> History</a>
-            <a class="nav-link active" href="/settings.html"><i class="fa-solid fa-gear me-2"></i> Settings</a>
-            <hr class="text-secondary mx-3">
-            <button id="themeToggle" class="btn btn-link nav-link text-start"><i class="fa-solid fa-moon me-2"></i> Toggle Theme</button>
-            <button id="logoutBtn" class="btn btn-link nav-link text-start text-danger"><i class="fa-solid fa-right-from-bracket me-2"></i> Logout</button>
+<div class="shell">
+    <aside class="sidebar">
+        <a class="brand" href="/dashboard.html">
+            <img src="/favicon.svg" alt="">
+            <div>
+                <div class="brand-name">Email Verifier</div>
+                <div class="brand-sub">Bulk verification</div>
+            </div>
+        </a>
+        <nav class="side-nav">
+            <a class="side-link" data-path="/dashboard.html" href="/dashboard.html"><i class="fa-solid fa-chart-pie"></i>Dashboard</a>
+            <a class="side-link" data-path="/single.html" href="/single.html"><i class="fa-solid fa-magnifying-glass"></i>Single verify</a>
+            <a class="side-link" data-path="/bulk.html" href="/bulk.html"><i class="fa-solid fa-file-csv"></i>Bulk verify</a>
+            <a class="side-link" data-path="/history.html" href="/history.html"><i class="fa-solid fa-clock-rotate-left"></i>History</a>
+            <div class="side-sep"></div>
+            <a class="side-link" data-path="/settings.html" href="/settings.html"><i class="fa-solid fa-gear"></i>Settings</a>
         </nav>
-        <div class="sidebar-footer">
-            <small class="text-muted">Self-hosted · v1.0.1</small>
+        <div class="side-foot">
+            <div class="side-link" style="cursor:default"><i class="fa-solid fa-user"></i><span id="userNameDisplay">Signed in</span></div>
+            <button class="side-link" id="themeBtn"><i class="fa-solid fa-moon"></i>Theme</button>
+            <button class="side-link danger" id="logoutBtn"><i class="fa-solid fa-right-from-bracket"></i>Log out</button>
         </div>
-    </div>
+    </aside>
 
-    <div class="main-content">
-        <div class="page-header fade-in">
-            <h2>Settings</h2>
-            <p class="page-subtitle">Reacher backends, rate limits, engine status, and profile</p>
-        </div>
+    <main class="main">
+        <header class="topbar">
+            <h1>Settings</h1>
+            <div class="spacer"></div>
+            <div class="quick">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input id="quickEmail" type="email" placeholder="Quick verify an email…">
+                <button id="quickGo">Verify</button>
+            </div>
+            <button class="btn sm icon" id="paletteBtn" title="Command palette (Ctrl+K)"><i class="fa-solid fa-terminal"></i></button>
+        </header>
 
-        <div class="row g-4 fade-in">
-            <div class="col-lg-5">
-                <div class="glass-card p-4 mb-4">
-                    <h5 class="mb-4 fw-bold"><i class="fa-solid fa-user me-2 gradient-text"></i>Profile</h5>
-                    <div class="mb-3">
-                        <label class="form-label">Name</label>
-                        <input type="text" class="form-control" id="profileName" disabled>
-                    </div>
-                    <div class="mb-0">
-                        <label class="form-label">Email</label>
-                        <input type="email" class="form-control" id="profileEmail" disabled>
-                    </div>
-                </div>
-
-                <div class="glass-card p-4 mb-4" id="verificationSpeedCard" style="display:none;">
-                    <h5 class="mb-2 fw-bold"><i class="fa-solid fa-gauge-high me-2 gradient-text"></i>Rate limits</h5>
-                    <p class="small text-muted"><strong>Global row:</strong> per second is one shared speed for everything; per minute and per day are <em>each Reacher's own budget</em> — reach the minute cap and checks move to the next Reacher, reach the daily cap and that Reacher rests until tomorrow (UTC). <strong>Provider rows</strong> cap that provider across all Reachers. 0 means no limit.</p>
-
-                    <div class="mb-3">
-                        <label class="form-label">Max concurrent checks</label>
-                        <input class="form-control" type="number" min="1" max="20" id="maxConcurrent" value="2">
-                    </div>
-
-                    <div class="table-responsive">
-                        <table class="table table-sm align-middle mb-0 engine-compare-table">
-                            <thead>
-                                <tr>
-                                    <th>Limit</th>
-                                    <th class="text-end">Per sec</th>
-                                    <th class="text-end">Per min</th>
-                                    <th class="text-end">Per day</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td class="fw-medium">Global</td>
-                                    <td><input class="form-control form-control-sm" type="number" min="1" max="20" id="globalPerSecond" value="1"></td>
-                                    <td><input class="form-control form-control-sm" type="number" min="0" max="1200" id="globalPerMinute" value="60"></td>
-                                    <td><input class="form-control form-control-sm" type="number" min="0" max="100000" id="globalPerDay" value="5000"></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-medium">Gmail</td>
-                                    <td><input class="form-control form-control-sm" type="number" min="1" max="10" id="secGmail" value="1"></td>
-                                    <td><input class="form-control form-control-sm" type="number" min="0" max="600" id="minGmail" value="30"></td>
-                                    <td><input class="form-control form-control-sm" type="number" min="0" max="50000" id="dayGmail" value="1000"></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-medium">Yahoo</td>
-                                    <td><input class="form-control form-control-sm" type="number" min="1" max="10" id="secYahoo" value="1"></td>
-                                    <td><input class="form-control form-control-sm" type="number" min="0" max="600" id="minYahoo" value="30"></td>
-                                    <td><input class="form-control form-control-sm" type="number" min="0" max="50000" id="dayYahoo" value="1000"></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-medium">Microsoft</td>
-                                    <td><input class="form-control form-control-sm" type="number" min="1" max="10" id="secMicrosoft" value="1"></td>
-                                    <td><input class="form-control form-control-sm" type="number" min="0" max="600" id="minMicrosoft" value="30"></td>
-                                    <td><input class="form-control form-control-sm" type="number" min="0" max="50000" id="dayMicrosoft" value="1000"></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-medium">Other</td>
-                                    <td><input class="form-control form-control-sm" type="number" min="1" max="10" id="secOther" value="1"></td>
-                                    <td><input class="form-control form-control-sm" type="number" min="0" max="600" id="minOther" value="30"></td>
-                                    <td><input class="form-control form-control-sm" type="number" min="0" max="50000" id="dayOther" value="1000"></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <p class="small text-muted mt-2 mb-1">0 = no limit for that window. Whole numbers only.</p>
-                    <button class="btn btn-primary mt-2" id="saveVerificationSpeed"><i class="fa-solid fa-floppy-disk me-1"></i> Save limits</button>
-                    <p class="small text-muted mt-2 mb-2" id="verificationSpeedStatus">Admin-only settings. Changes apply to queued checks.</p>
-                    <div class="small" id="providerBackoffStatus" aria-live="polite"></div>
-                    <div class="small text-muted mt-1" id="limiterUsage" aria-live="polite"></div>
-                    <div class="small text-muted mt-1" id="engineUsage" aria-live="polite"></div>
-                </div>
-
-                <div class="glass-card p-4">
-                    <h5 class="mb-3 fw-bold"><i class="fa-solid fa-plug me-2 gradient-text"></i>Connection</h5>
-                    <ul class="list-unstyled small text-muted mb-0">
-                        <li class="mb-2"><strong class="text-body">UI:</strong> <a href="http://localhost:5000" target="_blank">http://localhost:5000</a></li>
-                        <li class="mb-2"><strong class="text-body">API:</strong> <code id="goApiUrl">http://localhost:8080</code> (internal)</li>
-                        <li><strong class="text-body">SMTP:</strong> Direct port 25 (no proxy required on most home networks)</li>
-                    </ul>
+        <div class="page">
+            <div class="page-head">
+                <div>
+                    <h2>Configuration</h2>
+                    <p>Backends, pacing and account.</p>
                 </div>
             </div>
 
-            <div class="col-lg-7">
-                <div class="glass-card p-4 mb-4" id="reacherCard" style="display:none;">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h5 class="mb-0 fw-bold"><i class="fa-solid fa-server me-2 gradient-text"></i>Reacher backends</h5>
-                        <button id="refreshBackendsBtn" class="btn btn-sm btn-outline-primary"><i class="fa-solid fa-rotate me-1"></i>Check all</button>
-                    </div>
-                    <p class="small text-muted" id="reacherSummary"></p>
+            <div class="tabs" role="tablist">
+                <button class="tab is-active" data-tab="backends">Reacher backends</button>
+                <button class="tab" data-tab="limits">Rate limits</button>
+                <button class="tab" data-tab="account">Account</button>
+            </div>
 
-                    <div class="table-responsive">
-                        <table class="table table-sm align-middle mb-3 engine-compare-table">
+            <section class="tab-panel is-active" data-panel="backends">
+                <div class="card mb-4" id="reacherCard">
+                    <div class="card-head">
+                        <h3>Backends</h3>
+                        <div class="spacer"></div>
+                        <button class="btn sm" id="refreshBackendsBtn"><i class="fa-solid fa-rotate"></i>Check all</button>
+                    </div>
+                    <div class="card-body" style="padding-bottom:8px">
+                        <p class="small text-muted" id="reacherSummary"></p>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="table">
                             <thead>
-                                <tr>
-                                    <th>Backend</th>
-                                    <th>Status</th>
-                                    <th>Used today</th>
-                                    <th class="text-end">Actions</th>
-                                </tr>
+                                <tr><th>Backend</th><th>Status</th><th>Used today</th><th class="right">Actions</th></tr>
                             </thead>
-                            <tbody id="reacherRows">
-                                <tr><td colspan="4" class="text-muted small">Loading…</td></tr>
-                            </tbody>
+                            <tbody id="reacherRows"></tbody>
                         </table>
                     </div>
-
-                    <hr>
-                    <h6 class="fw-bold small text-uppercase text-muted mb-2">Add a Reacher</h6>
-                    <div class="row g-2">
-                        <div class="col-sm-6"><input id="newName" class="form-control form-control-sm" placeholder="Name, e.g. Reacher EU"></div>
-                        <div class="col-sm-6"><input id="newUrl" class="form-control form-control-sm" placeholder="https://reacher.example.com"></div>
-                        <div class="col-sm-6"><input id="newSecret" type="password" class="form-control form-control-sm" placeholder="Shared secret (optional)"></div>
+                    <div class="card-foot">
+                        <p class="small text-muted mb-3" id="reacherNote"></p>
+                        <div class="grid cols-3" style="gap:8px">
+                            <input class="input sm" id="newName" placeholder="Name, e.g. Reacher EU">
+                            <input class="input sm" id="newUrl" placeholder="https://reacher.example.com">
+                            <input class="input sm" id="newSecret" type="password" placeholder="Shared secret">
+                        </div>
+                        <div class="d-flex align-items-center gap-2 mt-3 flex-wrap">
+                            <button class="btn sm primary" id="addBackendBtn"><i class="fa-solid fa-plus"></i>Add backend</button>
+                            <span class="small text-muted">Pacing is not set per backend — every Reacher follows the limits tab.</span>
+                        </div>
                     </div>
-                    <div class="d-flex flex-wrap gap-2 mt-2 align-items-center">
-                        <button id="addBackendBtn" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus me-1"></i>Add backend</button>
-                        <small class="text-muted">Limits are not set per backend — every Reacher follows the Rate limits above.</small>
-                    </div>
-                    <p class="small text-muted mt-2 mb-0" id="reacherNote"></p>
                 </div>
+            </section>
 
-                <div class="glass-card p-4 mb-4">
-                    <h5 class="mb-3 fw-bold"><i class="fa-solid fa-microchip me-2 gradient-text"></i>Active verification stack</h5>
-                    <div id="goEngineStatus" class="engine-status offline mb-3">
-                        <span class="status-dot"></span>
-                        <span id="goStatusText">Checking verifier...</span>
+            <section class="tab-panel" data-panel="limits">
+                <div class="card" id="verificationSpeedCard" style="display:none">
+                    <div class="card-head">
+                        <h3>Rate limits</h3>
+                        <div class="spacer"></div>
+                        <span class="chip neutral">admin only</span>
                     </div>
-                    <p id="goStatusDetail" class="text-muted small mb-4"></p>
+                    <div class="card-body">
+                        <p class="small text-muted mb-4">
+                            <b>Global per second</b> is one shared speed for everything. <b>Global per minute / per day</b> are each Reacher's own budget — reach the minute cap and checks move to the next Reacher, reach the daily cap and that Reacher rests until tomorrow (UTC).
+                            <b>Provider rows</b> cap that provider across all backends. 0 means no limit.
+                        </p>
 
-                    <div class="engine-stack-card helper-engine mb-0">
-                        <div>
-                            <span class="badge bg-secondary mb-2">FALLBACK — IN USE</span>
-                            <h6 class="fw-bold mb-1">truemail-go</h6>
-                            <p class="small text-muted mb-0">Used only when every Reacher backend fails or is at its limit. Syntax → MX → SMTP on port 25. Results show <code>engine: truemail-go</code> so a fallback is never silent.</p>
+                        <div class="grid cols-4 mb-4">
+                            <div class="field">
+                                <label class="label" for="maxConcurrent">Max concurrent</label>
+                                <input class="input" type="number" min="1" max="20" id="maxConcurrent" value="2">
+                            </div>
+                            <div class="field">
+                                <label class="label" for="globalPerSecond">Global / second</label>
+                                <input class="input" type="number" min="1" max="20" id="globalPerSecond" value="1">
+                            </div>
+                            <div class="field">
+                                <label class="label" for="globalPerMinute">Global / minute</label>
+                                <input class="input" type="number" min="0" max="1200" id="globalPerMinute" value="60">
+                            </div>
+                            <div class="field">
+                                <label class="label" for="globalPerDay">Global / day</label>
+                                <input class="input" type="number" min="0" max="100000" id="globalPerDay" value="5000">
+                            </div>
+                        </div>
+
+                        <div class="table-wrap">
+                            <table class="table">
+                                <thead>
+                                    <tr><th>Provider</th><th>Per second</th><th>Per minute</th><th>Per day</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="fw-semibold">Gmail</td>
+                                        <td><input class="form-control form-control-sm" type="number" min="1" max="10" id="secGmail"></td>
+                                        <td><input class="form-control form-control-sm" type="number" min="0" max="600" id="minGmail"></td>
+                                        <td><input class="form-control form-control-sm" type="number" min="0" max="50000" id="dayGmail"></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-semibold">Yahoo</td>
+                                        <td><input class="form-control form-control-sm" type="number" min="1" max="10" id="secYahoo"></td>
+                                        <td><input class="form-control form-control-sm" type="number" min="0" max="600" id="minYahoo"></td>
+                                        <td><input class="form-control form-control-sm" type="number" min="0" max="50000" id="dayYahoo"></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-semibold">Microsoft</td>
+                                        <td><input class="form-control form-control-sm" type="number" min="1" max="10" id="secMicrosoft"></td>
+                                        <td><input class="form-control form-control-sm" type="number" min="0" max="600" id="minMicrosoft"></td>
+                                        <td><input class="form-control form-control-sm" type="number" min="0" max="50000" id="dayMicrosoft"></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-semibold">Other</td>
+                                        <td><input class="form-control form-control-sm" type="number" min="1" max="10" id="secOther"></td>
+                                        <td><input class="form-control form-control-sm" type="number" min="0" max="600" id="minOther"></td>
+                                        <td><input class="form-control form-control-sm" type="number" min="0" max="50000" id="dayOther"></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="btn-row mt-4">
+                            <button class="btn primary" id="saveVerificationSpeed"><i class="fa-solid fa-floppy-disk"></i>Save limits</button>
+                        </div>
+                        <p class="small text-muted mt-2 mb-0" id="verificationSpeedStatus">Changes apply to queued checks.</p>
+                        <p class="small text-muted mb-0" id="providerBackoffStatus"></p>
+                        <p class="small text-muted mb-0" id="limiterUsage"></p>
+                        <p class="small text-muted mb-0" id="engineUsage"></p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="tab-panel" data-panel="account">
+                <div class="grid split">
+                    <div class="card">
+                        <div class="card-head"><h3>Signed in as</h3></div>
+                        <div class="card-body">
+                            <div class="field mb-3">
+                                <label class="label">Name</label>
+                                <input class="input" id="profileName" disabled>
+                            </div>
+                            <div class="field">
+                                <label class="label">Email</label>
+                                <input class="input" id="profileEmail" disabled>
+                            </div>
                         </div>
                     </div>
 
-                    <button id="refreshHealthBtn" class="btn btn-sm btn-outline-primary mt-3">
-                        <i class="fa-solid fa-rotate me-1"></i> Refresh Status
-                    </button>
-                </div>
+                    <div class="card">
+                        <div class="card-head">
+                            <h3>Engine status</h3>
+                            <div class="spacer"></div>
+                            <button class="btn sm" id="refreshHealthBtn"><i class="fa-solid fa-rotate"></i>Refresh</button>
+                        </div>
+                        <div class="card-body">
+                            <div id="goEngineStatus" class="notice mb-2">
+                                <i class="fa-solid fa-circle-notch"></i>
+                                <span id="goStatusText">Checking verifier…</span>
+                            </div>
+                            <p class="small text-muted mb-3" id="goStatusDetail"></p>
 
-                <div class="glass-card p-4">
-                    <h5 class="mb-3 fw-bold"><i class="fa-solid fa-scale-balanced me-2 gradient-text"></i>Engine comparison</h5>
-                    <p class="small text-muted">How the verifiers this app can use compare.</p>
-                    <div class="table-responsive">
-                        <table class="table table-sm align-middle mb-0 engine-compare-table">
-                            <thead>
-                                <tr>
-                                    <th>Library</th>
-                                    <th>SMTP dialog</th>
-                                    <th>In this app</th>
-                                </tr>
-                            </thead>
-                            <tbody id="engineCompareBody"></tbody>
-                        </table>
+                            <div class="table-wrap">
+                                <table class="table">
+                                    <thead><tr><th>Engine</th><th>SMTP dialog</th><th>Role</th></tr></thead>
+                                    <tbody id="engineCompareBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
+            </section>
         </div>
-    </div>
+    </main>
+</div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-    <script src="/js/engine-ui.js"></script>
-    <script src="/js/main.js"></script>
-    <script>
-        const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
-        const PROVIDER_LABELS = { gmail: 'Gmail', yahoo: 'Yahoo', microsoft: 'Microsoft', other: 'Other' };
-        const capitalize = value => value.charAt(0).toUpperCase() + value.slice(1);
-        const num = id => Number(document.getElementById(id).value);
-
-        function renderCompareTable() {
-            const tbody = document.getElementById('engineCompareBody');
-            const rows = [
-                { name: 'Reacher (Docker)', smtp: 'Yes — best for bulk', used: 'Yes — primary', cls: 'table-success' },
-                { name: 'truemail-go', smtp: 'Yes — full RCPT + codes', used: 'Yes — fallback', cls: '' },
-                { name: 'AfterShip email-verifier', smtp: 'Lists only', used: 'Yes (with truemail)', cls: '' },
-                { name: 'validate_email', smtp: 'No', used: 'No', cls: '' },
-                { name: 'KnowEmail.exe', smtp: 'Partial', used: 'No — desktop only', cls: '' },
-                { name: 'Paid SaaS APIs', smtp: 'Cloud', used: 'No — self-hosted only', cls: '' },
-            ];
-            tbody.innerHTML = rows.map(r => `
-                <tr class="${r.cls}">
-                    <td class="fw-medium">${r.name}</td>
-                    <td>${r.smtp}</td>
-                    <td>${r.used}</td>
-                </tr>
-            `).join('');
-        }
-
-        async function checkEngineHealth() {
-            const el = document.getElementById('goEngineStatus');
-            const text = document.getElementById('goStatusText');
-            const detail = document.getElementById('goStatusDetail');
-            try {
-                const res = await axios.get('/api/verify/health');
-                const d = res.data;
-                const active = d.active_engine;
-                const backends = d.reacher_backends || [];
-                const healthy = backends.filter(b => b.ok);
-
-                if (active) {
-                    el.className = 'engine-status online mb-3';
-                    text.textContent = `Active engine: ${active}`;
-                    const parts = [];
-                    if (backends.length) parts.push(`${healthy.length}/${backends.length} Reacher backends healthy`);
-                    if (d.go) parts.push('truemail-go ready (fallback)');
-                    detail.innerHTML = `
-                        <strong>Mode:</strong> ${d.mode || 'auto'}<br>
-                        ${parts.join(' · ') || 'No verifier reachable'}
-                    `;
-                } else {
-                    el.className = 'engine-status offline mb-3';
-                    text.textContent = 'No verifier running';
-                    detail.innerHTML = `Add a Reacher backend below, or start the Go verifier with <code>npm start</code>.`;
-                }
-            } catch {
-                el.className = 'engine-status offline mb-3';
-                text.textContent = 'Cannot reach API — log in first';
-                detail.textContent = 'Settings health check requires you to be logged in.';
-            }
-        }
-
-        // ---------- rate limits ----------
-
-        async function loadVerificationSpeed() {
-            const card = document.getElementById('verificationSpeedCard');
-            try {
-                const { data } = await axios.get('/api/verification-settings');
-                card.style.display = '';
-                document.getElementById('globalPerSecond').value = data.globalPerSecond;
-                document.getElementById('globalPerMinute').value = data.globalPerMinute;
-                document.getElementById('globalPerDay').value = data.globalPerDay;
-                document.getElementById('maxConcurrent').value = data.maxConcurrent;
-                PROVIDERS.forEach(p => {
-                    document.getElementById('sec' + capitalize(p)).value = data.providerPerSecond[p];
-                    document.getElementById('min' + capitalize(p)).value = data.providerPerMinute[p];
-                    document.getElementById('day' + capitalize(p)).value = data.providerPerDay[p];
-                });
-                renderProviderBackoff(data.providerBackoff || {});
-                renderLimiterUsage(data.usage || {});
-                renderEngineUsage(data.engineUsage);
-            } catch (error) {
-                if (error.response?.status === 403) card.style.display = 'none';
-                else document.getElementById('verificationSpeedStatus').textContent = 'Could not load settings. Check your database connection.';
-            }
-        }
-
-        function renderProviderBackoff(states) {
-            const el = document.getElementById('providerBackoffStatus');
-            el.innerHTML = '<strong>Provider protection:</strong> ' + PROVIDERS.map(key => {
-                const state = states[key] || {};
-                const name = PROVIDER_LABELS[key];
-                return state.paused
-                    ? name + ' paused (' + state.resumeInSeconds + 's remaining)'
-                    : name + ' active';
-            }).join(' · ');
-        }
-
-        function renderLimiterUsage(usage) {
-            const el = document.getElementById('limiterUsage');
-            const global = usage.global || {};
-            const bits = [`This minute: ${global.lastMinute ?? 0} started`, `Today: ${global.today ?? 0} started`];
-            if (global.active !== undefined) bits.push(`${global.active} running`);
-            if (global.queued) bits.push(`${global.queued} queued`);
-            el.textContent = bits.join(' · ');
-        }
-
-        // Totals per engine, including the truemail-go fallback.
-        function renderEngineUsage(usage) {
-            const el = document.getElementById('engineUsage');
-            if (!usage) { el.textContent = ''; return; }
-            const byProvider = PROVIDERS
-                .map(p => `${PROVIDER_LABELS[p]} ${usage.goByProvider?.[p] ?? 0}`)
-                .join(' · ');
-            el.innerHTML = `<strong>Today:</strong> Reacher ${usage.reacher ?? 0} · truemail-go ${usage.go ?? 0}`
-                + `<div class="small">truemail-go by provider: ${byProvider}</div>`;
-        }
-
-        document.getElementById('saveVerificationSpeed').addEventListener('click', async () => {
-            const status = document.getElementById('verificationSpeedStatus');
-            const payload = {
-                globalPerSecond: num('globalPerSecond'),
-                globalPerMinute: num('globalPerMinute'),
-                globalPerDay: num('globalPerDay'),
-                maxConcurrent: num('maxConcurrent'),
-                providerPerSecond: {},
-                providerPerMinute: {},
-                providerPerDay: {},
-            };
-            PROVIDERS.forEach(p => {
-                payload.providerPerSecond[p] = num('sec' + capitalize(p));
-                payload.providerPerMinute[p] = num('min' + capitalize(p));
-                payload.providerPerDay[p] = num('day' + capitalize(p));
-            });
-            try {
-                await axios.put('/api/verification-settings', payload);
-                status.textContent = 'Saved. New limits apply to queued checks.';
-                showToast('Rate limits saved');
-                await loadVerificationSpeed();
-            } catch (error) {
-                status.textContent = error.response?.data?.message || 'Could not save settings.';
-            }
-        });
-
-        // ---------- Reacher backends ----------
-
-        let backends = [];
-
-        function statusCell(b) {
-            const health = b.health || b.lastStatus || {};
-            if (b.locked) {
-                return '<span class="badge bg-secondary"><i class="fa-solid fa-lock me-1"></i>Locked</span>';
-            }
-            if (!b.enabled) {
-                return '<span class="badge bg-secondary">Disabled</span>';
-            }
-            if (health.ok) {
-                const latency = health.latencyMs ? ` · ${health.latencyMs}ms` : '';
-                const version = health.version ? `v${health.version}${latency}` : 'online';
-                return `<span class="badge bg-success">Online</span> <span class="small text-muted">${version}</span>`;
-            }
-            const error = health.error ? `<div class="small text-danger">${health.error}</div>` : '';
-            return `<span class="badge bg-danger">Offline</span>${error}`;
-        }
-
-        function usageCell(b) {
-            const usage = b.usage || {};
-            const used = usage.today ?? 0;
-            const perProvider = PROVIDERS
-                .map(p => `${PROVIDER_LABELS[p]} ${usage.byProvider?.[p]?.today ?? 0}`)
-                .join(' · ');
-            return `
-                <div class="fw-medium">${used}</div>
-                <div class="small text-muted">${perProvider}</div>
-            `;
-        }
-
-        function renderBackends(data) {
-            backends = data.backends || [];
-            const summary = document.getElementById('reacherSummary');
-            const rows = document.getElementById('reacherRows');
-            const note = document.getElementById('reacherNote');
-
-            if (!backends.length) {
-                rows.innerHTML = '<tr><td colspan="5" class="text-muted small">No backends yet. Add the URL of your Reacher service below.</td></tr>';
-            } else {
-                rows.innerHTML = backends.map(b => `
-                    <tr data-id="${b.id}">
-                        <td>
-                            <div class="fw-medium">${b.name}</div>
-                            <div class="small text-muted backend-url">${b.url}</div>
-                            <div class="small text-muted">${b.hasSecret ? (b.secretStatus === 'ok' ? 'secret saved' : 'secret unreadable — re-enter') : 'no secret'}</div>
-                        </td>
-                        <td>${statusCell(b)}</td>
-                        <td>${usageCell(b)}</td>
-                        <td class="text-end">
-                            <button class="btn btn-sm ${b.locked ? 'btn-warning' : 'btn-outline-secondary'}" data-action="lock" title="${b.locked ? 'Unlock backend' : 'Lock backend (do not use)'}">
-                                <i class="fa-solid ${b.locked ? 'fa-lock' : 'fa-lock-open'}"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-primary" data-action="test" title="Test connection"><i class="fa-solid fa-vial"></i></button>
-                            <button class="btn btn-sm btn-outline-danger" data-action="delete" title="Remove backend"><i class="fa-solid fa-trash"></i></button>
-                        </td>
-                    </tr>
-                `).join('');
-            }
-
-            const active = backends.filter(b => b.enabled && !b.locked).length;
-            const healthy = backends.filter(b => (b.health || b.lastStatus || {}).ok && !b.locked).length;
-            summary.textContent = backends.length
-                ? `${active} usable · ${healthy} online · each Reacher follows the Rate limits above: hit the per-minute cap and checks move to the next one, hit the daily cap and it is skipped until tomorrow (UTC)`
-                : '';
-            note.textContent = data.usingEnvironmentFallback
-                ? `Using REACHER_URL from the environment (${data.environmentFallbackUrl}) because no backend is saved here. Add one above to manage it from the UI.`
-                : '';
-            backends.forEach((b, index) => {
-                if ((b.health || b.lastStatus || {}).ok && !b.locked) backends[index]._online = true;
-            });
-        }
-
-        async function loadBackends() {
-            const card = document.getElementById('reacherCard');
-            try {
-                const { data } = await axios.get('/api/reacher-backends');
-                card.style.display = '';
-                renderBackends(data);
-            } catch (error) {
-                if (error.response?.status === 403) card.style.display = 'none';
-                else document.getElementById('reacherNote').textContent = 'Could not load Reacher backends.';
-            }
-        }
-
-        document.getElementById('reacherRows').addEventListener('click', async event => {
-            const button = event.target.closest('button[data-action]');
-            if (!button) return;
-            const row = button.closest('tr');
-            const id = row.getAttribute('data-id');
-            const backend = backends.find(b => b.id === id);
-            if (!backend) return;
-            const action = button.getAttribute('data-action');
-
-            if (action === 'lock') {
-                try {
-                    await axios.put(`/api/reacher-backends/${id}`, { locked: !backend.locked });
-                    showToast(backend.locked ? 'Backend unlocked' : 'Backend locked — it will not be used');
-                    await loadBackends();
-                } catch (error) {
-                    showToast(error.response?.data?.message || 'Could not update lock', 'error');
-                }
-                return;
-            }
-
-            if (action === 'test') {
-                button.disabled = true;
-                try {
-                    const { data } = await axios.post(`/api/reacher-backends/${id}/test`);
-                    const health = data.backend.health || {};
-                    showToast(health.ok ? `Online${health.version ? ' · v' + health.version : ''}` : `Offline: ${health.error || 'unknown error'}`, health.ok ? 'success' : 'error');
-                    await loadBackends();
-                } catch (error) {
-                    showToast(error.response?.data?.message || 'Test failed', 'error');
-                } finally {
-                    button.disabled = false;
-                }
-                return;
-            }
-
-            if (action === 'delete') {
-                if (!confirm(`Remove "${backend.name}"? Its counters are lost.`)) return;
-                try {
-                    await axios.delete(`/api/reacher-backends/${id}`);
-                    showToast('Backend removed');
-                    await loadBackends();
-                } catch (error) {
-                    showToast(error.response?.data?.message || 'Could not remove backend', 'error');
-                }
-                return;
-            }
-
-            if (action === 'save-limits') {
-                return;
-            }
-        });
-
-        document.getElementById('addBackendBtn').addEventListener('click', async () => {
-            const name = document.getElementById('newName').value.trim();
-            const url = document.getElementById('newUrl').value.trim();
-            const secret = document.getElementById('newSecret').value;
-            if (!name || !url) {
-                showToast('Name and URL are required', 'error');
-                return;
-            }
-            try {
-                await axios.post('/api/reacher-backends', { name, url, secret });
-                showToast('Backend added');
-                ['newName', 'newUrl', 'newSecret'].forEach(id => { document.getElementById(id).value = ''; });
-                await loadBackends();
-            } catch (error) {
-                showToast(error.response?.data?.message || 'Could not add backend', 'error');
-            }
-        });
-
-        document.getElementById('refreshBackendsBtn').addEventListener('click', async () => {
-            const button = document.getElementById('refreshBackendsBtn');
-            button.disabled = true;
-            try {
-                const { data } = await axios.post('/api/reacher-backends/check-all');
-                showToast(`${data.healthy}/${data.total} backends online`, data.healthy ? 'success' : 'error');
-                await loadBackends();
-            } catch (error) {
-                showToast(error.response?.data?.message || 'Could not check backends', 'error');
-            } finally {
-                button.disabled = false;
-            }
-        });
-
-        document.addEventListener('DOMContentLoaded', () => {
-            const user = JSON.parse(localStorage.getItem('user') || '{}');
-            document.getElementById('profileName').value = user.name || '';
-            document.getElementById('profileEmail').value = user.email || '';
-            renderCompareTable();
-            checkEngineHealth();
-            loadVerificationSpeed();
-            loadBackends();
-        });
-
-        document.getElementById('refreshHealthBtn').addEventListener('click', checkEngineHealth);
-    </script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/pages/settings.js"></script>
 </body>
 </html>
