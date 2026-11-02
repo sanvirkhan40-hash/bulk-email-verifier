@@ -26,6 +26,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/verify', require('./routes/verifyRoutes'));
 app.use('/api/verification-settings', require('./routes/verificationSettingsRoutes'));
+app.use('/api/reacher-backends', require('./routes/reacherRoutes'));
 app.use('/api/history', require('./routes/historyRoutes'));
 
 app.use(errorHandler);

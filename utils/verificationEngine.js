@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { mapReacherToReport, checkReacherHealth, REACHER_BASE } = require('./reacherClient');
 const { ensureGoVerifier } = require('./spawnGo');
+const reacherPool = require('./reacherPool');
 
 const GO_BASE = process.env.GO_VERIFIER_URL || 'http://localhost:8080';
 const ENGINE_MODE = (process.env.VERIFIER_ENGINE || 'truemail').toLowerCase();
@@ -11,7 +12,7 @@ let cachedEngine = null;
 async function verifyWithGo(email) {
     const url = `${GO_BASE}/v1/${encodeURIComponent(email)}/verification`;
     const { data } = await axios.get(url, { timeout: 120000 });
-    return { ...data, engine: data.engine || 'truemail-go' };
+    return { ...data, engine: data.engine || 'truemail-go', engine_backend: 'truemail-go' };
 }
 
 function mapStatus(report) {
@@ -37,6 +38,7 @@ function wrapResult(report, email) {
         syntax_valid: report.syntax_valid,
         smtp_check_ran: report.smtp_check_ran,
         engine: report.engine || 'unknown',
+        backend: report.engine_backend || '',
         status: mapStatus(report),
         report,
     };
@@ -105,13 +107,11 @@ async function verifyWithReacherTimed(email) {
         } catch (_) {}
     }
 
-const { data } = await axios.post(`${REACHER_BASE}/v0/check_email`, body, {
-    timeout: REACHER_TIMEOUT,
-    headers: process.env.REACHER_SECRET
-        ? { 'x-reacher-secret': process.env.REACHER_SECRET }
-        : {},
-});
-    return mapReacherToReport(data, email);
+    const { data, backend } = await reacherPool.verifyWithPool(body, { timeoutMs: REACHER_TIMEOUT });
+    const report = mapReacherToReport(data, email);
+    report.engine_backend = backend.name;
+    report.engine_backend_url = backend.url;
+    return report;
 }
 
 async function verifyEmailCombined(email) {
@@ -166,7 +166,27 @@ async function checkBackendHealth() {
         if (health.go) health.engine = data?.engine || 'truemail-go';
     } catch (_) {}
 
-    health.reacher = await checkReacherHealth();
+    health.reacher_backends = await reacherPool.loadBackends().then(backends => Promise.all(
+        backends.map(async backend => {
+            const cached = reacherPool.cachedHealthFor(backend.id);
+            const fresh = cached && Date.now() - cached.checkedAt < 15000;
+            const status = fresh || ENGINE_MODE === 'truemail'
+                ? (cached || { ok: false, version: '', latencyMs: 0, error: 'not checked yet' })
+                : await reacherPool.probe(backend);
+            return {
+                id: backend.id,
+                name: backend.name,
+                url: backend.url,
+                legacy: Boolean(backend.legacy),
+                ok: Boolean(status.ok),
+                version: status.version || '',
+                latencyMs: status.latencyMs || 0,
+                error: status.error || '',
+            };
+        })
+    ));
+
+    health.reacher = health.reacher_backends.some(backend => backend.ok);
 
     try {
         health.active_engine = await resolveEngine();

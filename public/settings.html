@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Settings - Bulk Email Verifier</title>
-    <meta name="description" content="Engine status, stack overview, and profile settings.">
+    <meta name="description" content="Engine status, Reacher backends, rate limits, and profile settings.">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="manifest" href="/site.webmanifest">
     <meta name="theme-color" content="#6366f1">
@@ -44,7 +44,7 @@
     <div class="main-content">
         <div class="page-header fade-in">
             <h2>Settings</h2>
-            <p class="page-subtitle">Engine status, stack overview, and profile</p>
+            <p class="page-subtitle">Reacher backends, rate limits, engine status, and profile</p>
         </div>
 
         <div class="row g-4 fade-in">
@@ -62,25 +62,63 @@
                 </div>
 
                 <div class="glass-card p-4 mb-4" id="verificationSpeedCard" style="display:none;">
-                    <h5 class="mb-3 fw-bold"><i class="fa-solid fa-gauge-high me-2 gradient-text"></i>Verification Speed</h5>
-                    <p class="small text-muted">Conservative starting limits. These control how quickly new checks start and how many can run simultaneously.</p>
-                    <div class="row g-3">
-                        <div class="col-6">
-                            <label class="form-label">Global checks / second</label>
-                            <input class="form-control" type="number" min="1" max="20" id="globalPerSecond" value="1">
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label">Max concurrent checks</label>
-                            <input class="form-control" type="number" min="1" max="20" id="maxConcurrent" value="2">
-                        </div>
-                        <div class="col-6"><label class="form-label">Gmail / second</label><input class="form-control" type="number" min="1" max="10" id="rateGmail" value="1"></div>
-                        <div class="col-6"><label class="form-label">Yahoo / second</label><input class="form-control" type="number" min="1" max="10" id="rateYahoo" value="1"></div>
-                        <div class="col-6"><label class="form-label">Microsoft / second</label><input class="form-control" type="number" min="1" max="10" id="rateMicrosoft" value="1"></div>
-                        <div class="col-6"><label class="form-label">Other providers / second</label><input class="form-control" type="number" min="1" max="10" id="rateOther" value="1"></div>
+                    <h5 class="mb-2 fw-bold"><i class="fa-solid fa-gauge-high me-2 gradient-text"></i>Rate limits</h5>
+                    <p class="small text-muted">Per second is one shared rate for everything. Per minute and per day also cap each provider. Reach a limit and queued checks wait instead of hammering the provider.</p>
+
+                    <div class="mb-3">
+                        <label class="form-label">Max concurrent checks</label>
+                        <input class="form-control" type="number" min="1" max="20" id="maxConcurrent" value="2">
                     </div>
-                    <button class="btn btn-primary mt-3" id="saveVerificationSpeed"><i class="fa-solid fa-floppy-disk me-1"></i> Save limits</button>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0 engine-compare-table">
+                            <thead>
+                                <tr>
+                                    <th>Limit</th>
+                                    <th class="text-end">Per sec</th>
+                                    <th class="text-end">Per min</th>
+                                    <th class="text-end">Per day</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="fw-medium">Global</td>
+                                    <td><input class="form-control form-control-sm" type="number" min="1" max="20" id="globalPerSecond" value="1"></td>
+                                    <td><input class="form-control form-control-sm" type="number" min="0" max="1200" id="globalPerMinute" value="60"></td>
+                                    <td><input class="form-control form-control-sm" type="number" min="0" max="100000" id="globalPerDay" value="5000"></td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-medium">Gmail</td>
+                                    <td><input class="form-control form-control-sm" type="number" min="1" max="10" id="secGmail" value="1"></td>
+                                    <td><input class="form-control form-control-sm" type="number" min="0" max="600" id="minGmail" value="30"></td>
+                                    <td><input class="form-control form-control-sm" type="number" min="0" max="50000" id="dayGmail" value="1000"></td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-medium">Yahoo</td>
+                                    <td><input class="form-control form-control-sm" type="number" min="1" max="10" id="secYahoo" value="1"></td>
+                                    <td><input class="form-control form-control-sm" type="number" min="0" max="600" id="minYahoo" value="30"></td>
+                                    <td><input class="form-control form-control-sm" type="number" min="0" max="50000" id="dayYahoo" value="1000"></td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-medium">Microsoft</td>
+                                    <td><input class="form-control form-control-sm" type="number" min="1" max="10" id="secMicrosoft" value="1"></td>
+                                    <td><input class="form-control form-control-sm" type="number" min="0" max="600" id="minMicrosoft" value="30"></td>
+                                    <td><input class="form-control form-control-sm" type="number" min="0" max="50000" id="dayMicrosoft" value="1000"></td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-medium">Other</td>
+                                    <td><input class="form-control form-control-sm" type="number" min="1" max="10" id="secOther" value="1"></td>
+                                    <td><input class="form-control form-control-sm" type="number" min="0" max="600" id="minOther" value="30"></td>
+                                    <td><input class="form-control form-control-sm" type="number" min="0" max="50000" id="dayOther" value="1000"></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="small text-muted mt-2 mb-1">0 = no limit for that window. Whole numbers only.</p>
+                    <button class="btn btn-primary mt-2" id="saveVerificationSpeed"><i class="fa-solid fa-floppy-disk me-1"></i> Save limits</button>
                     <p class="small text-muted mt-2 mb-2" id="verificationSpeedStatus">Admin-only settings. Changes apply to queued checks.</p>
                     <div class="small" id="providerBackoffStatus" aria-live="polite"></div>
+                    <div class="small text-muted mt-1" id="limiterUsage" aria-live="polite"></div>
                 </div>
 
                 <div class="glass-card p-4">
@@ -94,41 +132,70 @@
             </div>
 
             <div class="col-lg-7">
+                <div class="glass-card p-4 mb-4" id="reacherCard" style="display:none;">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h5 class="mb-0 fw-bold"><i class="fa-solid fa-server me-2 gradient-text"></i>Reacher backends</h5>
+                        <button id="refreshBackendsBtn" class="btn btn-sm btn-outline-primary"><i class="fa-solid fa-rotate me-1"></i>Check all</button>
+                    </div>
+                    <p class="small text-muted" id="reacherSummary"></p>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-3 engine-compare-table">
+                            <thead>
+                                <tr>
+                                    <th>Backend</th>
+                                    <th>Status</th>
+                                    <th>Used today</th>
+                                    <th>Limits /min · /day</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reacherRows">
+                                <tr><td colspan="5" class="text-muted small">Loading…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <hr>
+                    <h6 class="fw-bold small text-uppercase text-muted mb-2">Add a Reacher</h6>
+                    <div class="row g-2">
+                        <div class="col-sm-6"><input id="newName" class="form-control form-control-sm" placeholder="Name, e.g. Reacher EU"></div>
+                        <div class="col-sm-6"><input id="newUrl" class="form-control form-control-sm" placeholder="https://reacher.example.com"></div>
+                        <div class="col-sm-6"><input id="newSecret" type="password" class="form-control form-control-sm" placeholder="Shared secret (optional)"></div>
+                        <div class="col-6 col-sm-3"><input id="newPerMinute" type="number" min="0" max="600" value="60" class="form-control form-control-sm" title="Checks per minute for this backend"></div>
+                        <div class="col-6 col-sm-3"><input id="newPerDay" type="number" min="0" max="100000" value="2000" class="form-control form-control-sm" title="Checks per day for this backend"></div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 mt-2 align-items-center">
+                        <button id="addBackendBtn" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus me-1"></i>Add backend</button>
+                        <small class="text-muted">Per minute and per day belong to each Reacher. Per second is the shared global rate above.</small>
+                    </div>
+                    <p class="small text-muted mt-2 mb-0" id="reacherNote"></p>
+                </div>
+
                 <div class="glass-card p-4 mb-4">
-                    <h5 class="mb-3 fw-bold"><i class="fa-solid fa-server me-2 gradient-text"></i>Active verification stack</h5>
+                    <h5 class="mb-3 fw-bold"><i class="fa-solid fa-microchip me-2 gradient-text"></i>Active verification stack</h5>
                     <div id="goEngineStatus" class="engine-status offline mb-3">
                         <span class="status-dot"></span>
                         <span id="goStatusText">Checking verifier...</span>
                     </div>
                     <p id="goStatusDetail" class="text-muted small mb-4"></p>
 
-                    <div class="engine-stack-card active-engine mb-3">
-                        <div class="d-flex justify-content-between align-items-start gap-2">
-                            <div>
-                                <span class="badge bg-success mb-2">PRIMARY — IN USE</span>
-                                <h6 class="fw-bold mb-1">truemail-go</h6>
-                                <p class="small text-muted mb-0">Syntax → MX records → SMTP RCPT TO. Captures full server responses (e.g. <code>550 5.1.1</code> for fake Gmail addresses). This is the engine that decides <strong>valid yes/no</strong>.</p>
-                            </div>
-                            <i class="fa-solid fa-star text-warning fs-4"></i>
-                        </div>
-                    </div>
-
-                    <div class="engine-stack-card helper-engine mb-3">
+                    <div class="engine-stack-card helper-engine mb-0">
                         <div>
-                            <span class="badge bg-secondary mb-2">HELPER — IN USE</span>
-                            <h6 class="fw-bold mb-1">AfterShip email-verifier</h6>
-                            <p class="small text-muted mb-0">Local lists only: disposable domains, role accounts, free providers. <strong>Does not</strong> replace SMTP — truemail-go handles mailbox proof.</p>
+                            <span class="badge bg-secondary mb-2">FALLBACK — IN USE</span>
+                            <h6 class="fw-bold mb-1">truemail-go</h6>
+                            <p class="small text-muted mb-0">Used only when every Reacher backend fails or is at its limit. Syntax → MX → SMTP on port 25. Results show <code>engine: truemail-go</code> so a fallback is never silent.</p>
                         </div>
                     </div>
 
-                    <button id="refreshHealthBtn" class="btn btn-sm btn-outline-primary">
+                    <button id="refreshHealthBtn" class="btn btn-sm btn-outline-primary mt-3">
                         <i class="fa-solid fa-rotate me-1"></i> Refresh Status
                     </button>
                 </div>
 
                 <div class="glass-card p-4">
-                    <h5 class="mb-3 fw-bold"><i class="fa-solid fa-scale-balanced me-2 gradient-text"></i>Why this stack? (not used in this app)</h5>
-                    <p class="small text-muted">We evaluated everything in your workspace. <strong>truemail-go</strong> is the best fit for self-hosted bulk verify with verify-email.org-style SMTP reports.</p>
+                    <h5 class="mb-3 fw-bold"><i class="fa-solid fa-scale-balanced me-2 gradient-text"></i>Engine comparison</h5>
+                    <p class="small text-muted">How the verifiers this app can use compare.</p>
                     <div class="table-responsive">
                         <table class="table table-sm align-middle mb-0 engine-compare-table">
                             <thead>
@@ -151,11 +218,16 @@
     <script src="/js/engine-ui.js"></script>
     <script src="/js/main.js"></script>
     <script>
+        const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
+        const PROVIDER_LABELS = { gmail: 'Gmail', yahoo: 'Yahoo', microsoft: 'Microsoft', other: 'Other' };
+        const capitalize = value => value.charAt(0).toUpperCase() + value.slice(1);
+        const num = id => Number(document.getElementById(id).value);
+
         function renderCompareTable() {
             const tbody = document.getElementById('engineCompareBody');
             const rows = [
-                { name: 'Reacher (Docker)', smtp: 'Yes — best for bulk', used: 'Yes (recommended)', cls: 'table-success' },
-                { name: 'truemail-go', smtp: 'Yes — full RCPT + codes', used: 'Yes (built-in)', cls: '' },
+                { name: 'Reacher (Docker)', smtp: 'Yes — best for bulk', used: 'Yes — primary', cls: 'table-success' },
+                { name: 'truemail-go', smtp: 'Yes — full RCPT + codes', used: 'Yes — fallback', cls: '' },
                 { name: 'AfterShip email-verifier', smtp: 'Lists only', used: 'Yes (with truemail)', cls: '' },
                 { name: 'validate_email', smtp: 'No', used: 'No', cls: '' },
                 { name: 'KnowEmail.exe', smtp: 'Partial', used: 'No — desktop only', cls: '' },
@@ -178,23 +250,23 @@
                 const res = await axios.get('/api/verify/health');
                 const d = res.data;
                 const active = d.active_engine;
-                const online = d.go || d.reacher;
+                const backends = d.reacher_backends || [];
+                const healthy = backends.filter(b => b.ok);
 
-                if (online && active) {
+                if (active) {
                     el.className = 'engine-status online mb-3';
                     text.textContent = `Active engine: ${active}`;
                     const parts = [];
-                    if (d.reacher) parts.push(`Reacher ${d.reacher_url || '8081'} ✓`);
-                    if (d.go) parts.push(`truemail-go ${d.go_url || '8082'} ✓`);
+                    if (backends.length) parts.push(`${healthy.length}/${backends.length} Reacher backends healthy`);
+                    if (d.go) parts.push('truemail-go ready (fallback)');
                     detail.innerHTML = `
-                        <strong>Mode:</strong> ${d.mode || 'auto'} — verifications use <code>${active}</code>.<br>
-                        ${parts.join(' · ')}<br>
-                        <strong>Recommended:</strong> <code>VERIFIER_ENGINE=truemail</code> in .env (fast). Docker Reacher is optional and slow on Gmail.
+                        <strong>Mode:</strong> ${d.mode || 'auto'}<br>
+                        ${parts.join(' · ') || 'No verifier reachable'}
                     `;
                 } else {
                     el.className = 'engine-status offline mb-3';
                     text.textContent = 'No verifier running';
-                    detail.innerHTML = `Run <code>npm start</code> (truemail-go) or <code>docker compose up -d</code> then <code>npm start</code> (Reacher, recommended for bulk).`;
+                    detail.innerHTML = `Add a Reacher backend below, or start the Go verifier with <code>npm start</code>.`;
                 }
             } catch {
                 el.className = 'engine-status offline mb-3';
@@ -203,25 +275,7 @@
             }
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            const user = JSON.parse(localStorage.getItem('user') || '{}');
-            document.getElementById('profileName').value = user.name || '';
-            document.getElementById('profileEmail').value = user.email || '';
-            renderCompareTable();
-            checkEngineHealth();
-            loadVerificationSpeed();
-        });
-
-        function renderProviderBackoff(states) {
-            const el = document.getElementById('providerBackoffStatus');
-            const names = { gmail: 'Gmail', yahoo: 'Yahoo', microsoft: 'Microsoft', other: 'Other' };
-            el.innerHTML = '<strong>Provider protection:</strong> ' + Object.entries(names).map(([key, name]) => {
-                const state = states[key] || {};
-                return state.paused
-                    ? name + ' paused (' + state.resumeInSeconds + 's remaining)'
-                    : name + ' active';
-            }).join(' · ');
-        }
+        // ---------- rate limits ----------
 
         async function loadVerificationSpeed() {
             const card = document.getElementById('verificationSpeedCard');
@@ -229,38 +283,268 @@
                 const { data } = await axios.get('/api/verification-settings');
                 card.style.display = '';
                 document.getElementById('globalPerSecond').value = data.globalPerSecond;
+                document.getElementById('globalPerMinute').value = data.globalPerMinute;
+                document.getElementById('globalPerDay').value = data.globalPerDay;
                 document.getElementById('maxConcurrent').value = data.maxConcurrent;
-                document.getElementById('rateGmail').value = data.providerPerSecond.gmail;
-                document.getElementById('rateYahoo').value = data.providerPerSecond.yahoo;
-                document.getElementById('rateMicrosoft').value = data.providerPerSecond.microsoft;
-                document.getElementById('rateOther').value = data.providerPerSecond.other;
+                PROVIDERS.forEach(p => {
+                    document.getElementById('sec' + capitalize(p)).value = data.providerPerSecond[p];
+                    document.getElementById('min' + capitalize(p)).value = data.providerPerMinute[p];
+                    document.getElementById('day' + capitalize(p)).value = data.providerPerDay[p];
+                });
                 renderProviderBackoff(data.providerBackoff || {});
+                renderLimiterUsage(data.usage || {});
             } catch (error) {
                 if (error.response?.status === 403) card.style.display = 'none';
                 else document.getElementById('verificationSpeedStatus').textContent = 'Could not load settings. Check your database connection.';
             }
         }
 
+        function renderProviderBackoff(states) {
+            const el = document.getElementById('providerBackoffStatus');
+            el.innerHTML = '<strong>Provider protection:</strong> ' + PROVIDERS.map(key => {
+                const state = states[key] || {};
+                const name = PROVIDER_LABELS[key];
+                return state.paused
+                    ? name + ' paused (' + state.resumeInSeconds + 's remaining)'
+                    : name + ' active';
+            }).join(' · ');
+        }
+
+        function renderLimiterUsage(usage) {
+            const el = document.getElementById('limiterUsage');
+            const global = usage.global || {};
+            const bits = [`This minute: ${global.lastMinute ?? 0} started`, `Today: ${global.today ?? 0} started`];
+            if (global.active !== undefined) bits.push(`${global.active} running`);
+            if (global.queued) bits.push(`${global.queued} queued`);
+            el.textContent = bits.join(' · ');
+        }
+
         document.getElementById('saveVerificationSpeed').addEventListener('click', async () => {
             const status = document.getElementById('verificationSpeedStatus');
-            const value = id => Number(document.getElementById(id).value);
             const payload = {
-                globalPerSecond: value('globalPerSecond'),
-                maxConcurrent: value('maxConcurrent'),
-                providerPerSecond: {
-                    gmail: value('rateGmail'),
-                    yahoo: value('rateYahoo'),
-                    microsoft: value('rateMicrosoft'),
-                    other: value('rateOther')
-                }
+                globalPerSecond: num('globalPerSecond'),
+                globalPerMinute: num('globalPerMinute'),
+                globalPerDay: num('globalPerDay'),
+                maxConcurrent: num('maxConcurrent'),
+                providerPerSecond: {},
+                providerPerMinute: {},
+                providerPerDay: {},
             };
+            PROVIDERS.forEach(p => {
+                payload.providerPerSecond[p] = num('sec' + capitalize(p));
+                payload.providerPerMinute[p] = num('min' + capitalize(p));
+                payload.providerPerDay[p] = num('day' + capitalize(p));
+            });
             try {
                 await axios.put('/api/verification-settings', payload);
                 status.textContent = 'Saved. New limits apply to queued checks.';
+                showToast('Rate limits saved');
                 await loadVerificationSpeed();
             } catch (error) {
                 status.textContent = error.response?.data?.message || 'Could not save settings.';
             }
+        });
+
+        // ---------- Reacher backends ----------
+
+        let backends = [];
+
+        function statusCell(b) {
+            const health = b.health || b.lastStatus || {};
+            if (b.locked) {
+                return '<span class="badge bg-secondary"><i class="fa-solid fa-lock me-1"></i>Locked</span>';
+            }
+            if (!b.enabled) {
+                return '<span class="badge bg-secondary">Disabled</span>';
+            }
+            if (health.ok) {
+                const latency = health.latencyMs ? ` · ${health.latencyMs}ms` : '';
+                const version = health.version ? `v${health.version}${latency}` : 'online';
+                return `<span class="badge bg-success">Online</span> <span class="small text-muted">${version}</span>`;
+            }
+            const error = health.error ? `<div class="small text-danger">${health.error}</div>` : '';
+            return `<span class="badge bg-danger">Offline</span>${error}`;
+        }
+
+        function usageCell(b) {
+            const usage = b.usage || {};
+            const used = usage.today ?? 0;
+            const limit = b.limits?.perDay ?? 0;
+            const limitLabel = limit > 0 ? limit : '∞';
+            const exhausted = limit > 0 && used >= limit;
+            const perProvider = PROVIDERS
+                .map(p => `${PROVIDER_LABELS[p]} ${usage.byProvider?.[p]?.today ?? 0}`)
+                .join(' · ');
+            return `
+                <div class="${exhausted ? 'text-danger fw-medium' : 'fw-medium'}">${used} / ${limitLabel}</div>
+                <div class="small text-muted">${perProvider}</div>
+                ${exhausted ? '<div class="small text-danger">Limit reached — unused until tomorrow (UTC)</div>' : ''}
+            `;
+        }
+
+        function renderBackends(data) {
+            backends = data.backends || [];
+            const summary = document.getElementById('reacherSummary');
+            const rows = document.getElementById('reacherRows');
+            const note = document.getElementById('reacherNote');
+
+            if (!backends.length) {
+                rows.innerHTML = '<tr><td colspan="5" class="text-muted small">No backends yet. Add the URL of your Reacher service below.</td></tr>';
+            } else {
+                rows.innerHTML = backends.map(b => `
+                    <tr data-id="${b.id}">
+                        <td>
+                            <div class="fw-medium">${b.name}</div>
+                            <div class="small text-muted">${b.url}</div>
+                            <div class="small text-muted">${b.hasSecret ? (b.secretStatus === 'ok' ? 'secret saved' : 'secret unreadable — re-enter') : 'no secret'}</div>
+                        </td>
+                        <td>${statusCell(b)}</td>
+                        <td>${usageCell(b)}</td>
+                        <td>
+                            <div class="d-flex align-items-center gap-1">
+                                <input class="form-control form-control-sm" style="width:70px" type="number" min="0" max="600" value="${b.limits?.perMinute ?? 60}" data-role="perMinute" title="Per minute">
+                                <input class="form-control form-control-sm" style="width:84px" type="number" min="0" max="100000" value="${b.limits?.perDay ?? 2000}" data-role="perDay" title="Per day">
+                                <button class="btn btn-sm btn-outline-secondary" data-action="save-limits" title="Save limits"><i class="fa-solid fa-check"></i></button>
+                            </div>
+                        </td>
+                        <td class="text-end">
+                            <button class="btn btn-sm ${b.locked ? 'btn-warning' : 'btn-outline-secondary'}" data-action="lock" title="${b.locked ? 'Unlock backend' : 'Lock backend (do not use)'}">
+                                <i class="fa-solid ${b.locked ? 'fa-lock' : 'fa-lock-open'}"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary" data-action="test" title="Test connection"><i class="fa-solid fa-vial"></i></button>
+                            <button class="btn btn-sm btn-outline-danger" data-action="delete" title="Remove backend"><i class="fa-solid fa-trash"></i></button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+
+            const active = backends.filter(b => b.enabled && !b.locked).length;
+            const healthy = backends.filter(b => (b.health || b.lastStatus || {}).ok && !b.locked).length;
+            summary.textContent = backends.length
+                ? `${active} usable · ${healthy} online · checks rotate between usable backends and switch automatically when one hits its per-minute or per-day limit`
+                : '';
+            note.textContent = data.usingEnvironmentFallback
+                ? `Using REACHER_URL from the environment (${data.environmentFallbackUrl}) because no backend is saved here. Add one above to manage it from the UI.`
+                : '';
+            backends.forEach((b, index) => {
+                if ((b.health || b.lastStatus || {}).ok && !b.locked) backends[index]._online = true;
+            });
+        }
+
+        async function loadBackends() {
+            const card = document.getElementById('reacherCard');
+            try {
+                const { data } = await axios.get('/api/reacher-backends');
+                card.style.display = '';
+                renderBackends(data);
+            } catch (error) {
+                if (error.response?.status === 403) card.style.display = 'none';
+                else document.getElementById('reacherNote').textContent = 'Could not load Reacher backends.';
+            }
+        }
+
+        document.getElementById('reacherRows').addEventListener('click', async event => {
+            const button = event.target.closest('button[data-action]');
+            if (!button) return;
+            const row = button.closest('tr');
+            const id = row.getAttribute('data-id');
+            const backend = backends.find(b => b.id === id);
+            if (!backend) return;
+            const action = button.getAttribute('data-action');
+
+            if (action === 'lock') {
+                try {
+                    await axios.put(`/api/reacher-backends/${id}`, { locked: !backend.locked });
+                    showToast(backend.locked ? 'Backend unlocked' : 'Backend locked — it will not be used');
+                    await loadBackends();
+                } catch (error) {
+                    showToast(error.response?.data?.message || 'Could not update lock', 'error');
+                }
+                return;
+            }
+
+            if (action === 'test') {
+                button.disabled = true;
+                try {
+                    const { data } = await axios.post(`/api/reacher-backends/${id}/test`);
+                    const health = data.backend.health || {};
+                    showToast(health.ok ? `Online${health.version ? ' · v' + health.version : ''}` : `Offline: ${health.error || 'unknown error'}`, health.ok ? 'success' : 'error');
+                    await loadBackends();
+                } catch (error) {
+                    showToast(error.response?.data?.message || 'Test failed', 'error');
+                } finally {
+                    button.disabled = false;
+                }
+                return;
+            }
+
+            if (action === 'delete') {
+                if (!confirm(`Remove "${backend.name}"? Its counters are lost.`)) return;
+                try {
+                    await axios.delete(`/api/reacher-backends/${id}`);
+                    showToast('Backend removed');
+                    await loadBackends();
+                } catch (error) {
+                    showToast(error.response?.data?.message || 'Could not remove backend', 'error');
+                }
+                return;
+            }
+
+            if (action === 'save-limits') {
+                const perMinute = Number(row.querySelector('[data-role="perMinute"]').value);
+                const perDay = Number(row.querySelector('[data-role="perDay"]').value);
+                try {
+                    await axios.put(`/api/reacher-backends/${id}`, { limits: { perMinute, perDay } });
+                    showToast('Limits saved');
+                    await loadBackends();
+                } catch (error) {
+                    showToast(error.response?.data?.message || 'Could not save limits', 'error');
+                }
+            }
+        });
+
+        document.getElementById('addBackendBtn').addEventListener('click', async () => {
+            const name = document.getElementById('newName').value.trim();
+            const url = document.getElementById('newUrl').value.trim();
+            const secret = document.getElementById('newSecret').value;
+            const perMinute = Number(document.getElementById('newPerMinute').value);
+            const perDay = Number(document.getElementById('newPerDay').value);
+            if (!name || !url) {
+                showToast('Name and URL are required', 'error');
+                return;
+            }
+            try {
+                await axios.post('/api/reacher-backends', { name, url, secret, limits: { perMinute, perDay } });
+                showToast('Backend added');
+                ['newName', 'newUrl', 'newSecret'].forEach(id => { document.getElementById(id).value = ''; });
+                await loadBackends();
+            } catch (error) {
+                showToast(error.response?.data?.message || 'Could not add backend', 'error');
+            }
+        });
+
+        document.getElementById('refreshBackendsBtn').addEventListener('click', async () => {
+            const button = document.getElementById('refreshBackendsBtn');
+            button.disabled = true;
+            try {
+                const { data } = await axios.post('/api/reacher-backends/check-all');
+                showToast(`${data.healthy}/${data.total} backends online`, data.healthy ? 'success' : 'error');
+                await loadBackends();
+            } catch (error) {
+                showToast(error.response?.data?.message || 'Could not check backends', 'error');
+            } finally {
+                button.disabled = false;
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            document.getElementById('profileName').value = user.name || '';
+            document.getElementById('profileEmail').value = user.email || '';
+            renderCompareTable();
+            checkEngineHealth();
+            loadVerificationSpeed();
+            loadBackends();
         });
 
         document.getElementById('refreshHealthBtn').addEventListener('click', checkEngineHealth);

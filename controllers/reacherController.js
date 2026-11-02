@@ -1,0 +1,247 @@
+const ReacherBackend = require('../models/ReacherBackend');
+const pool = require('../utils/reacherPool');
+const { encryptSecret, decryptSecret, canDecrypt } = require('../utils/secretBox');
+
+const MAX_BACKENDS = 20;
+
+function validateUrl(raw) {
+    const url = pool.normalizeUrl(raw);
+    if (!url) return { error: 'URL is required (for example https://reacher.softicx.com)' };
+    if (!/^https?:\/\//i.test(url)) return { error: 'URL must start with http:// or https://' };
+    if (/\/\/[^/]*@/.test(url)) return { error: 'Do not put credentials inside the URL — use the secret field' };
+    try {
+        // Throws on malformed URLs so we never store something unroutable.
+        new URL(url);
+    } catch (_) {
+        return { error: 'That does not look like a valid URL' };
+    }
+    return { url };
+}
+
+// Per-backend budget. Per-second is global (one shared rate for every Reacher);
+// per-minute makes the pool cycle to the next backend, per-day locks it for the
+// rest of the UTC day. 0 disables that window.
+function normalizeLimits(input, fallback = {}) {
+    const source = input || {};
+    const read = (key, min, max, default_) => {
+        const raw = source[key] ?? fallback[key];
+        if (raw === undefined || raw === null || raw === '') return default_;
+        const value = Number(raw);
+        if (!Number.isInteger(value) || value < min || value > max) {
+            return { error: `${key} must be a whole number between ${min} and ${max}` };
+        }
+        return value;
+    };
+    const perMinute = read('perMinute', 0, 600, 60);
+    const perDay = read('perDay', 0, 100000, 2000);
+    const bad = [perMinute, perDay].find(value => typeof value === 'object');
+    if (bad) return bad;
+    return { value: { perMinute, perDay } };
+}
+
+// Secrets never leave the server. The UI only learns whether one is stored.
+function serialize(doc, health) {
+    const lastStatus = doc.lastStatus || {};
+    const limits = {
+        perMinute: Number.isFinite(Number(doc.limits?.perMinute)) ? Number(doc.limits.perMinute) : 60,
+        perDay: Number.isFinite(Number(doc.limits?.perDay)) ? Number(doc.limits.perDay) : 2000,
+    };
+    return {
+        id: String(doc._id),
+        name: doc.name,
+        url: doc.url,
+        enabled: doc.enabled !== false,
+        locked: doc.locked === true,
+        order: doc.order || 0,
+        limits,
+        usage: pool.getBackendUsage(String(doc._id)),
+        hasSecret: Boolean(doc.secretEnc),
+        secretStatus: !doc.secretEnc ? 'missing' : (canDecrypt(doc.secretEnc) ? 'ok' : 'unreadable'),
+        lastStatus: {
+            ok: Boolean(lastStatus.ok),
+            version: lastStatus.version || '',
+            latencyMs: lastStatus.latencyMs || 0,
+            checkedAt: lastStatus.checkedAt || null,
+            error: lastStatus.error || '',
+        },
+        health: health || null,
+        stats: {
+            checks: doc.stats?.checks || 0,
+            failures: doc.stats?.failures || 0,
+            lastUsedAt: doc.stats?.lastUsedAt || null,
+            lastError: doc.stats?.lastError || '',
+        },
+        createdAt: doc.createdAt,
+        updatedAt: doc.updatedAt,
+    };
+}
+
+function withCachedHealth(docs) {
+    return docs.map(doc => serialize(doc, pool.cachedHealthFor(String(doc._id))));
+}
+
+const listBackends = async (req, res) => {
+    try {
+        const docs = await ReacherBackend.find().sort({ order: 1, createdAt: 1 }).select('+secretEnc').lean();
+        const backends = withCachedHealth(docs);
+        const enabledCount = backends.filter(b => b.enabled).length;
+        res.json({
+            count: backends.length,
+            enabledCount,
+            usingEnvironmentFallback: enabledCount === 0 && Boolean(process.env.REACHER_URL),
+            environmentFallbackUrl: process.env.REACHER_URL || '',
+            backends,
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Could not load Reacher backends' });
+    }
+};
+
+const createBackend = async (req, res) => {
+    const { name, url, secret, enabled = true, locked = false, order = 0, limits } = req.body || {};
+    const trimmedName = String(name || '').trim();
+    if (!trimmedName) return res.status(400).json({ message: 'Give this backend a name, for example "Reacher EU"' });
+
+    const check = validateUrl(url);
+    if (check.error) return res.status(400).json({ message: check.error });
+
+    const normalized = normalizeLimits(limits);
+    if (normalized.error) return res.status(400).json({ message: normalized.error });
+
+    try {
+        const total = await ReacherBackend.countDocuments();
+        if (total >= MAX_BACKENDS) {
+            return res.status(400).json({ message: `Limit reached — ${MAX_BACKENDS} backends maximum` });
+        }
+
+        const doc = await ReacherBackend.create({
+            name: trimmedName,
+            url: check.url,
+            secretEnc: secret ? encryptSecret(String(secret)) : '',
+            enabled: enabled !== false,
+            locked: locked === true,
+            order: Number(order) || 0,
+            limits: normalized.value,
+        });
+        pool.invalidateCache();
+
+        const full = await ReacherBackend.findById(doc._id).select('+secretEnc').lean();
+        const health = await pool.probe({ id: String(doc._id), url: check.url, secret: String(secret || '') });
+        await ReacherBackend.updateOne({ _id: doc._id }, { $set: { lastStatus: health } });
+
+        res.status(201).json({ message: 'Backend added', backend: serialize({ ...full, lastStatus: health }, health) });
+    } catch (error) {
+        if (error.code === 11000) {
+            return res.status(400).json({ message: 'A backend with that name already exists' });
+        }
+        res.status(500).json({ message: 'Could not add backend', error: error.message });
+    }
+};
+
+const updateBackend = async (req, res) => {
+    const { name, url, secret, enabled, locked, order, clearSecret, limits } = req.body || {};
+    try {
+        const doc = await ReacherBackend.findById(req.params.id).select('+secretEnc');
+        if (!doc) return res.status(404).json({ message: 'Backend not found' });
+
+        if (name !== undefined) {
+            const trimmed = String(name).trim();
+            if (!trimmed) return res.status(400).json({ message: 'Name cannot be empty' });
+            doc.name = trimmed;
+        }
+        if (url !== undefined) {
+            const check = validateUrl(url);
+            if (check.error) return res.status(400).json({ message: check.error });
+            doc.url = check.url;
+        }
+        // An empty secret field means "keep the stored secret"; only send a value to replace it.
+        if (clearSecret === true) {
+            doc.secretEnc = '';
+        } else if (secret) {
+            doc.secretEnc = encryptSecret(String(secret));
+        }
+        if (enabled !== undefined) doc.enabled = enabled !== false;
+        if (locked !== undefined) doc.locked = locked === true;
+        if (order !== undefined) doc.order = Number(order) || 0;
+        if (limits !== undefined) {
+            const normalized = normalizeLimits(limits, doc.limits || {});
+            if (normalized.error) return res.status(400).json({ message: normalized.error });
+            doc.limits = normalized.value;
+        }
+
+        await doc.save();
+        pool.invalidateCache();
+
+        const fresh = await ReacherBackend.findById(doc._id).select('+secretEnc').lean();
+        res.json({ message: 'Backend updated', backend: serialize(fresh) });
+    } catch (error) {
+        if (error.code === 11000) {
+            return res.status(400).json({ message: 'A backend with that name already exists' });
+        }
+        res.status(500).json({ message: 'Could not update backend', error: error.message });
+    }
+};
+
+const deleteBackend = async (req, res) => {
+    try {
+        const doc = await ReacherBackend.findByIdAndDelete(req.params.id);
+        if (!doc) return res.status(404).json({ message: 'Backend not found' });
+        pool.invalidateCache();
+        res.json({ message: 'Backend removed' });
+    } catch (error) {
+        res.status(500).json({ message: 'Could not remove backend' });
+    }
+};
+
+const testBackend = async (req, res) => {
+    try {
+        const doc = await ReacherBackend.findById(req.params.id).select('+secretEnc').lean();
+        if (!doc) return res.status(404).json({ message: 'Backend not found' });
+
+        // Probed directly rather than through the pool: a locked or disabled
+        // backend must still be testable so it can be checked before unlocking.
+        const target = {
+            id: String(doc._id),
+            name: doc.name,
+            url: pool.normalizeUrl(doc.url),
+            secret: decryptSecret(doc.secretEnc),
+            limits: doc.limits || {},
+        };
+        const health = await pool.probe(target);
+        await ReacherBackend.updateOne({ _id: doc._id }, { $set: { lastStatus: health } });
+        res.json({ backend: serialize({ ...doc, lastStatus: health }, health) });
+    } catch (error) {
+        res.status(500).json({ message: 'Could not test backend', error: error.message });
+    }
+};
+
+const checkAllBackends = async (_req, res) => {
+    try {
+        const probed = await pool.probeAll();
+        const summary = probed.map(item => ({
+            id: item.id,
+            name: item.name,
+            url: item.url,
+            ok: item.health.ok,
+            version: item.health.version,
+            latencyMs: item.health.latencyMs,
+            error: item.health.error,
+        }));
+        res.json({
+            healthy: summary.filter(b => b.ok).length,
+            total: summary.length,
+            backends: summary,
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Could not check backends', error: error.message });
+    }
+};
+
+module.exports = {
+    listBackends,
+    createBackend,
+    updateBackend,
+    deleteBackend,
+    testBackend,
+    checkAllBackends,
+};
