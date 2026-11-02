@@ -1,18 +1,27 @@
 const VerificationSettings = require('../models/VerificationSettings');
 
+const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
+
 const DEFAULTS = {
     globalPerSecond: 1,
+    globalPerMinute: 60,
+    globalPerDay: 5000,
     maxConcurrent: 2,
     providerPerSecond: { gmail: 1, yahoo: 1, microsoft: 1, other: 1 },
+    providerPerMinute: { gmail: 30, yahoo: 30, microsoft: 30, other: 30 },
+    providerPerDay: { gmail: 1000, yahoo: 1000, microsoft: 1000, other: 1000 },
 };
 
 const queue = [];
-const lastGlobalStart = { value: 0 };
-const lastProviderStart = new Map();
 const providerHealth = new Map();
+// scope -> { secLast, minStarts[], dayKey, dayCount }. Scope "global" plus one per provider.
+const windows = new Map();
 let active = 0;
 let timer = null;
 let pumping = false;
+
+const SETTINGS_CACHE_MS = 750;
+let settingsCache = { at: 0, value: null };
 
 function providerFor(email) {
     const domain = String(email || '').split('@').pop().toLowerCase();
@@ -22,14 +31,65 @@ function providerFor(email) {
     return 'other';
 }
 
+function utcDayKey(date = new Date()) {
+    return date.toISOString().slice(0, 10);
+}
+
+function msUntilNextUtcDay(now) {
+    const next = new Date(now);
+    next.setUTCHours(24, 0, 0, 0);
+    return Math.max(1000, next.getTime() - now);
+}
+
+function windowState(scope) {
+    let state = windows.get(scope);
+    if (!state) {
+        state = { secLast: 0, minStarts: [], dayKey: utcDayKey(), dayCount: 0 };
+        windows.set(scope, state);
+    }
+    return state;
+}
+
+function rollDay(state) {
+    const key = utcDayKey();
+    if (state.dayKey !== key) {
+        state.dayKey = key;
+        state.dayCount = 0;
+    }
+}
+
+function pruneMinute(state, now) {
+    while (state.minStarts.length && state.minStarts[0] <= now - 60000) state.minStarts.shift();
+}
+
 async function readSettings() {
-    const saved = await VerificationSettings.findOne({ key: 'global' }).lean();
-    if (!saved) return DEFAULTS;
-    return {
-        globalPerSecond: saved.globalPerSecond || DEFAULTS.globalPerSecond,
-        maxConcurrent: saved.maxConcurrent || DEFAULTS.maxConcurrent,
-        providerPerSecond: { ...DEFAULTS.providerPerSecond, ...(saved.providerPerSecond || {}) },
-    };
+    if (settingsCache.value && Date.now() - settingsCache.at < SETTINGS_CACHE_MS) {
+        return settingsCache.value;
+    }
+    let value = DEFAULTS;
+    try {
+        const saved = await VerificationSettings.findOne({ key: 'global' }).lean();
+        if (saved) {
+            const pick = (source, fallback) => (Number.isFinite(Number(source)) ? Number(source) : fallback);
+            value = {
+                globalPerSecond: pick(saved.globalPerSecond, DEFAULTS.globalPerSecond) || 1,
+                globalPerMinute: pick(saved.globalPerMinute, DEFAULTS.globalPerMinute),
+                globalPerDay: pick(saved.globalPerDay, DEFAULTS.globalPerDay),
+                maxConcurrent: pick(saved.maxConcurrent, DEFAULTS.maxConcurrent) || 1,
+                providerPerSecond: { ...DEFAULTS.providerPerSecond, ...(saved.providerPerSecond || {}) },
+                providerPerMinute: { ...DEFAULTS.providerPerMinute, ...(saved.providerPerMinute || {}) },
+                providerPerDay: { ...DEFAULTS.providerPerDay, ...(saved.providerPerDay || {}) },
+            };
+        }
+    } catch (error) {
+        console.error('Could not read verification settings, using defaults:', error.message);
+    }
+    settingsCache = { at: Date.now(), value };
+    return value;
+}
+
+function invalidateSettingsCache() {
+    settingsCache = { at: 0, value: null };
 }
 
 // Only infrastructure/provider throttling signals count. A normal 550 mailbox rejection
@@ -73,6 +133,58 @@ function recordOutcome(provider, result, error) {
     providerHealth.set(provider, state);
 }
 
+// How long this scope must wait before another check may start.
+// Every limit is evaluated independently; the largest wait wins.
+function scopeWait(scope, limits, now) {
+    const state = windowState(scope);
+    rollDay(state);
+    pruneMinute(state, now);
+
+    let wait = 0;
+
+    const perSecond = Number(limits.perSecond) || 0;
+    if (perSecond > 0 && state.secLast) {
+        wait = Math.max(wait, state.secLast + 1000 / perSecond - now);
+    }
+
+    const perMinute = Number(limits.perMinute) || 0;
+    if (perMinute > 0 && state.minStarts.length >= perMinute) {
+        const oldestInWindow = state.minStarts[state.minStarts.length - perMinute];
+        wait = Math.max(wait, oldestInWindow + 60000 - now);
+    }
+
+    const perDay = Number(limits.perDay) || 0;
+    if (perDay > 0 && state.dayCount >= perDay) {
+        wait = Math.max(wait, msUntilNextUtcDay(now));
+    }
+
+    return Math.max(0, wait);
+}
+
+function commitStart(scope, now) {
+    const state = windowState(scope);
+    rollDay(state);
+    pruneMinute(state, now);
+    state.secLast = now;
+    state.minStarts.push(now);
+    state.dayCount += 1;
+}
+
+function limitsFor(settings, provider) {
+    return {
+        global: {
+            perSecond: settings.globalPerSecond,
+            perMinute: settings.globalPerMinute,
+            perDay: settings.globalPerDay,
+        },
+        [provider]: {
+            perSecond: settings.providerPerSecond?.[provider],
+            perMinute: settings.providerPerMinute?.[provider],
+            perDay: settings.providerPerDay?.[provider],
+        },
+    };
+}
+
 function schedulePump(delay) {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => { timer = null; pump(); }, Math.max(10, delay));
@@ -98,21 +210,21 @@ async function pump() {
             }
 
             const item = queue[index];
-            const globalGap = 1000 / settings.globalPerSecond;
-            const providerRate = settings.providerPerSecond[item.provider] || 1;
-            const providerGap = 1000 / providerRate;
-            const providerLast = lastProviderStart.get(item.provider) || 0;
-            const dueAt = Math.max(lastGlobalStart.value + globalGap, providerLast + providerGap);
+            const limits = limitsFor(settings, item.provider);
+            const wait = Math.max(
+                scopeWait('global', limits.global, now),
+                scopeWait(item.provider, limits[item.provider], now),
+            );
 
-            if (now < dueAt) {
-                nextDelay = dueAt - now;
+            if (wait > 0) {
+                nextDelay = wait;
                 break;
             }
 
             queue.splice(index, 1);
             active += 1;
-            lastGlobalStart.value = now;
-            lastProviderStart.set(item.provider, now);
+            commitStart('global', now);
+            commitStart(item.provider, now);
 
             Promise.resolve()
                 .then(item.task)
@@ -147,7 +259,7 @@ function runWithVerificationLimit(email, task) {
 
 function getProviderBackoffStatus() {
     const now = Date.now();
-    return Object.fromEntries(['gmail', 'yahoo', 'microsoft', 'other'].map(provider => {
+    return Object.fromEntries(PROVIDERS.map(provider => {
         const state = providerHealth.get(provider) || { failures: 0, pausedUntil: 0, lastError: '' };
         return [provider, {
             consecutiveTemporaryFailures: state.failures,
@@ -158,4 +270,31 @@ function getProviderBackoffStatus() {
     }));
 }
 
-module.exports = { runWithVerificationLimit, providerFor, getProviderBackoffStatus, isTransientProviderFailure };
+// Rolling counters so the settings page can show real usage against the limits.
+function getLimiterUsage() {
+    const now = Date.now();
+    const usage = {};
+    ['global', ...PROVIDERS].forEach(scope => {
+        const state = windowState(scope);
+        rollDay(state);
+        pruneMinute(state, now);
+        usage[scope] = {
+            lastMinute: state.minStarts.length,
+            today: state.dayCount,
+            dayKey: state.dayKey,
+            active: scope === 'global' ? active : undefined,
+            queued: scope === 'global' ? queue.length : undefined,
+        };
+    });
+    return usage;
+}
+
+module.exports = {
+    runWithVerificationLimit,
+    providerFor,
+    getProviderBackoffStatus,
+    isTransientProviderFailure,
+    getLimiterUsage,
+    invalidateSettingsCache,
+    PROVIDERS,
+};
