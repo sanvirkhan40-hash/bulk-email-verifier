@@ -3,229 +3,150 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Bulk Email Verifier</title>
-    <meta name="description" content="Email verification dashboard with bulk insights and SMTP diagnostics.">
+    <title>Dashboard · Email Verifier</title>
+    <meta name="theme-color" content="#4f46e5">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="manifest" href="/site.webmanifest">
-    <meta name="theme-color" content="#6366f1">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
+    <script>try{var m=localStorage.getItem('theme')||'system';var d=m==='dark'||(m==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light')}catch(e){}</script>
+    <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
-    <div id="toast-container" class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1050;"></div>
-
-    <!-- Sidebar -->
-    <div class="sidebar glass-card border-start-0 border-top-0 border-bottom-0 rounded-0">
-        <div class="sidebar-brand mb-4">
-            <a href="/dashboard.html" class="brand-link">
-                <img src="/favicon.svg" alt="" class="brand-icon" width="36" height="36">
-                <div class="brand-text">
-                    <span class="brand-title">Email Verifier</span>
-                    <span class="engine-badge brand-badge" data-engine-badge>truemail-go</span>
-                </div>
-            </a>
-        </div>
-        <nav class="nav flex-column px-2">
-            <a class="nav-link active" href="/dashboard.html"><i class="fa-solid fa-chart-pie me-2"></i> Dashboard</a>
-            <a class="nav-link" href="/single.html"><i class="fa-solid fa-magnifying-glass me-2"></i> Single Verify</a>
-            <a class="nav-link" href="/bulk.html"><i class="fa-solid fa-file-csv me-2"></i> Bulk Verify</a>
-            <a class="nav-link" href="/history.html"><i class="fa-solid fa-clock-rotate-left me-2"></i> History</a>
-            <a class="nav-link" href="/settings.html"><i class="fa-solid fa-gear me-2"></i> Settings</a>
-            <hr class="text-secondary mx-3">
-            <button id="themeToggle" class="btn btn-link nav-link text-start"><i class="fa-solid fa-moon me-2"></i> Toggle Theme</button>
-            <button id="logoutBtn" class="btn btn-link nav-link text-start text-danger"><i class="fa-solid fa-right-from-bracket me-2"></i> Logout</button>
+<div class="shell">
+    <aside class="sidebar">
+        <a class="brand" href="/dashboard.html">
+            <img src="/favicon.svg" alt="">
+            <div>
+                <div class="brand-name">Email Verifier</div>
+                <div class="brand-sub">Bulk verification</div>
+            </div>
+        </a>
+        <nav class="side-nav">
+            <a class="side-link" data-path="/dashboard.html" href="/dashboard.html"><i class="fa-solid fa-chart-pie"></i>Dashboard</a>
+            <a class="side-link" data-path="/single.html" href="/single.html"><i class="fa-solid fa-magnifying-glass"></i>Single verify</a>
+            <a class="side-link" data-path="/bulk.html" href="/bulk.html"><i class="fa-solid fa-file-csv"></i>Bulk verify</a>
+            <a class="side-link" data-path="/history.html" href="/history.html"><i class="fa-solid fa-clock-rotate-left"></i>History</a>
+            <div class="side-sep"></div>
+            <a class="side-link" data-path="/settings.html" href="/settings.html"><i class="fa-solid fa-gear"></i>Settings</a>
         </nav>
-        <div class="sidebar-footer">
-            <small class="text-muted">Self-hosted · v1.0.1</small>
+        <div class="side-foot">
+            <div class="side-link" style="cursor:default"><i class="fa-solid fa-user"></i><span id="userNameDisplay">Signed in</span></div>
+            <button class="side-link" id="themeBtn"><i class="fa-solid fa-moon"></i>Theme</button>
+            <button class="side-link danger" id="logoutBtn"><i class="fa-solid fa-right-from-bracket"></i>Log out</button>
         </div>
-    </div>
+    </aside>
 
-    <!-- Main Content -->
-    <div class="main-content">
-        <div class="page-header fade-in">
-            <h2>Welcome back, <span id="userNameDisplay" class="gradient-text"></span></h2>
-            <p class="page-subtitle">Your bulk email verification overview</p>
-        </div>
+    <main class="main">
+        <header class="topbar">
+            <h1>Dashboard</h1>
+            <div class="spacer"></div>
+            <div class="quick">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input id="quickEmail" type="email" placeholder="Quick verify an email…">
+                <button id="quickGo">Verify</button>
+            </div>
+            <button class="btn sm icon" id="paletteBtn" title="Command palette (Ctrl+K)"><i class="fa-solid fa-terminal"></i></button>
+        </header>
 
-        <!-- Stats Cards -->
-        <div class="row g-4 mb-4 fade-in" style="animation-delay: 0.1s;">
-            <div class="col-6 col-md-3">
-                <div class="glass-card stat-card" style="border-left:4px solid #6366f1;">
-                    <i class="fa-solid fa-envelope-open stat-icon"></i>
-                    <div class="stat-label">Total Verified</div>
-                    <div class="stat-num gradient-text" id="statTotal">–</div>
+        <div class="page">
+            <div class="page-head">
+                <div>
+                    <h2>Overview</h2>
+                    <p id="validRate">Loading…</p>
+                </div>
+                <div class="btn-row">
+                    <button class="btn sm" id="refreshDashboard"><i class="fa-solid fa-rotate"></i>Refresh</button>
+                    <a class="btn sm primary" href="/bulk.html"><i class="fa-solid fa-file-csv"></i>New bulk run</a>
                 </div>
             </div>
-            <div class="col-6 col-md-3">
-                <div class="glass-card stat-card" style="border-left:4px solid #28a745;">
-                    <i class="fa-solid fa-circle-check stat-icon text-success"></i>
-                    <div class="stat-label">Valid Emails</div>
-                    <div class="stat-num text-success" id="statValid">–</div>
+
+            <div class="grid cols-4 mb-4">
+                <div class="card stat">
+                    <div class="stat-label">Total checks</div>
+                    <div class="stat-value" id="statTotal">—</div>
+                    <div class="stat-meta">all time</div>
                 </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="glass-card stat-card" style="border-left:4px solid #dc3545;">
-                    <i class="fa-solid fa-circle-xmark stat-icon text-danger"></i>
-                    <div class="stat-label">Invalid / Bad</div>
-                    <div class="stat-num text-danger" id="statInvalid">–</div>
+                <div class="card stat is-ok">
+                    <div class="stat-label">Valid</div>
+                    <div class="stat-value" id="statValid">—</div>
+                    <div class="stat-meta">mailbox confirmed</div>
                 </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="glass-card stat-card" style="border-left:4px solid #ffc107;">
-                    <i class="fa-solid fa-circle-question stat-icon text-warning"></i>
+                <div class="card stat is-bad">
+                    <div class="stat-label">Invalid</div>
+                    <div class="stat-value" id="statInvalid">—</div>
+                    <div class="stat-meta">rejected by server</div>
+                </div>
+                <div class="card stat is-warn">
                     <div class="stat-label">Unknown</div>
-                    <div class="stat-num text-warning" id="statUnknown">–</div>
+                    <div class="stat-value" id="statUnknown">—</div>
+                    <div class="stat-meta">could not verify</div>
                 </div>
             </div>
-        </div>
 
-        <!-- Chart + AI Insights -->
-        <div class="row g-4 mb-4 fade-in" style="animation-delay: 0.2s;">
-            <!-- Doughnut Chart -->
-            <div class="col-lg-6">
-                <div class="glass-card p-4 h-100">
-                    <h5 class="mb-4 fw-bold"><i class="fa-solid fa-chart-pie me-2 gradient-text"></i>Verification Overview</h5>
-                    <div style="height: 260px; display: flex; justify-content: center; align-items: center;">
-                        <canvas id="statsChart"></canvas>
+            <div class="grid split">
+                <div class="card">
+                    <div class="card-head">
+                        <h3>Recent verifications</h3>
+                        <div class="spacer"></div>
+                        <a class="hint" href="/history.html">View all</a>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="table">
+                            <thead>
+                                <tr><th>Email</th><th>Status</th><th>Checked by</th><th>When</th></tr>
+                            </thead>
+                            <tbody id="recentBody"></tbody>
+                        </table>
+                    </div>
+                    <div id="recentEmpty" class="empty d-none">
+                        <i class="fa-solid fa-inbox"></i>
+                        <p>No verifications yet. Start with a single check or upload a list.</p>
                     </div>
                 </div>
-            </div>
-            <!-- Engine Insights -->
-            <div class="col-lg-6">
-                <div class="glass-card p-4 h-100">
-                    <div class="d-flex align-items-center gap-2 mb-4">
-                        <i class="fa-solid fa-bolt" style="color:#6366f1;font-size:1.2rem;"></i>
-                        <h5 class="mb-0 fw-bold">Verification Engine</h5>
-                        <span class="engine-badge ms-1" data-engine-badge>truemail-go</span>
-                    </div>
-                    <div id="aiInsightsContainer">
-                        <div class="insight-item">
-                            <div class="insight-icon" style="background:rgba(99,102,241,0.12);color:#6366f1;">
-                                <i class="fa-solid fa-shield-halved"></i>
-                            </div>
-                            <div>
-                                <div class="fw-semibold small">SMTP Diagnostics</div>
-                                <div class="text-muted" style="font-size:0.8rem;">Each email gets syntax, MX, and SMTP RCPT checks with server responses.</div>
-                            </div>
+
+                <div class="grid" style="gap:16px">
+                    <div class="card">
+                        <div class="card-head">
+                            <h3>Result mix</h3>
+                            <div class="spacer"></div>
+                            <span class="chip neutral">all time</span>
                         </div>
-                        <div class="insight-item">
-                            <div class="insight-icon" style="background:rgba(40,167,69,0.12);color:#28a745;">
-                                <i class="fa-solid fa-magnifying-glass"></i>
-                            </div>
-                            <div>
-                                <div class="fw-semibold small">Multi-Layer Validation</div>
-                                <div class="text-muted" style="font-size:0.8rem;">Syntax → MX Records → Disposable Detection → Reachability checks.</div>
-                            </div>
-                        </div>
-                        <div class="insight-item">
-                            <div class="insight-icon" style="background:rgba(220,53,69,0.12);color:#dc3545;">
-                                <i class="fa-solid fa-trash-can"></i>
-                            </div>
-                            <div>
-                                <div class="fw-semibold small">Disposable Email Detection</div>
-                                <div class="text-muted" style="font-size:0.8rem;">Identifies temp-mail, throwaway, and suspicious domain patterns.</div>
-                            </div>
-                        </div>
-                        <div class="insight-item">
-                            <div class="insight-icon" style="background:rgba(255,193,7,0.12);color:#c69500;">
-                                <i class="fa-solid fa-file-csv"></i>
-                            </div>
-                            <div>
-                                <div class="fw-semibold small">Bulk CSV / XLSX Support</div>
-                                <div class="text-muted" style="font-size:0.8rem;">Upload hundreds of emails — verified in batches and exported to CSV.</div>
+                        <div class="card-body">
+                            <div class="donut-wrap">
+                                <div class="donut" id="donut">
+                                    <div class="donut-center">
+                                        <b id="donutTotal">0</b>
+                                        <span>checks</span>
+                                    </div>
+                                </div>
+                                <div class="legend">
+                                    <div class="legend-row"><span class="swatch ok"></span>Valid<b id="legendValid">0</b></div>
+                                    <div class="legend-row"><span class="swatch bad"></span>Invalid<b id="legendInvalid">0</b></div>
+                                    <div class="legend-row"><span class="swatch warn"></span>Unknown<b id="legendUnknown">0</b></div>
+                                </div>
                             </div>
                         </div>
                     </div>
+
+                    <div class="card">
+                        <div class="card-head">
+                            <h3>Verification engines</h3>
+                            <div class="spacer"></div>
+                            <span class="chip neutral" id="engineState">checking…</span>
+                        </div>
+                        <div class="card-body" style="padding-bottom:4px">
+                            <p class="small text-muted" id="engineDetail"></p>
+                        </div>
+                        <div id="backendList"></div>
+                    </div>
                 </div>
             </div>
         </div>
+    </main>
+</div>
 
-        <!-- Quick Actions -->
-        <div class="row g-3 fade-in" style="animation-delay: 0.3s;">
-            <div class="col-12 mb-1">
-                <h5 class="fw-bold">Quick Actions</h5>
-            </div>
-            <div class="col-6 col-md-3">
-                <a href="/single.html" class="quick-action glass-card text-center">
-                    <i class="fa-solid fa-magnifying-glass gradient-text"></i>
-                    <span>Single Verify</span>
-                </a>
-            </div>
-            <div class="col-6 col-md-3">
-                <a href="/bulk.html" class="quick-action glass-card text-center">
-                    <i class="fa-solid fa-file-csv" style="color:#6366f1;"></i>
-                    <span>Bulk Upload</span>
-                </a>
-            </div>
-            <div class="col-6 col-md-3">
-                <a href="/history.html" class="quick-action glass-card text-center">
-                    <i class="fa-solid fa-clock-rotate-left" style="color:#a855f7;"></i>
-                    <span>View History</span>
-                </a>
-            </div>
-            <div class="col-6 col-md-3">
-                <a href="/settings.html" class="quick-action glass-card text-center">
-                    <i class="fa-solid fa-gear text-muted"></i>
-                    <span>Settings</span>
-                </a>
-            </div>
-        </div>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-    <script src="/js/engine-ui.js"></script>
-    <script src="/js/main.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', async () => {
-            try {
-                const res = await axios.get('/api/history/stats');
-                const { total, valid, invalid, unknown } = res.data;
-
-                document.getElementById('statTotal').innerText   = total;
-                document.getElementById('statValid').innerText   = valid;
-                document.getElementById('statInvalid').innerText = invalid;
-                document.getElementById('statUnknown').innerText = unknown;
-
-                // Doughnut Chart
-                const isDark = document.body.classList.contains('dark-mode');
-                const ctx = document.getElementById('statsChart').getContext('2d');
-                new Chart(ctx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: ['Valid', 'Invalid / Bad', 'Unknown'],
-                        datasets: [{
-                            data: [valid, invalid, unknown],
-                            backgroundColor: ['#28a745', '#dc3545', '#ffc107'],
-                            borderWidth: 3,
-                            borderColor: isDark ? '#1e1e1e' : '#fff',
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        animation: false,
-                        cutout: '70%',
-                        plugins: {
-                            legend: {
-                                position: 'bottom',
-                                labels: {
-                                    color: isDark ? '#e8ebf1' : '#151a22',
-                                    padding: 16,
-                                    boxWidth: 12,
-                                    font: { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', weight: '600' }
-                                }
-                            }
-                        }
-                    }
-                });
-            } catch (err) {
-                showToast('Failed to load stats', 'error');
-            }
-        });
-    </script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/pages/dashboard.js"></script>
 </body>
 </html>
