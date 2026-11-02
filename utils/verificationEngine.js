@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { mapReacherToReport, checkReacherHealth, REACHER_BASE } = require('./reacherClient');
+const microsoftAccount = require('./microsoftAccount');
 const { ensureGoVerifier } = require('./spawnGo');
 const reacherPool = require('./reacherPool');
 const { providerFor } = require('./verificationLimiter');
@@ -184,6 +185,14 @@ async function verifyEmailCombined(email) {
         } else {
             throw new Error(`truemail-go failed: ${primaryErr.message}`);
         }
+    }
+
+    // Microsoft 365 answers SMTP probes unreliably; ask the account endpoint
+    // instead so a real mailbox is never reported as invalid.
+    try {
+        await microsoftAccount.applyToReport(report, email);
+    } catch (error) {
+        console.warn('Microsoft account lookup failed for ' + email + ': ' + error.message);
     }
 
     recordEngineUse(report.engine === 'reacher' ? 'reacher' : 'truemail-go', email);
