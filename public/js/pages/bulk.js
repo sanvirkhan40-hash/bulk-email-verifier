@@ -11,7 +11,33 @@ const uploadForm    = document.getElementById('uploadForm');
         let results = [];
         let fileRows = [];
         let jobRunning = false;
-        const BATCH = 3;
+        const CONCURRENCY = 3;
+
+        // Group by provider, then round-robin so a file sorted by domain does
+        // not send all Gmail first and leave Outlook/Other waiting.
+        function providerOf(email) {
+            const domain = String(email || '').split('@').pop().toLowerCase();
+            if (['gmail.com', 'googlemail.com'].includes(domain)) return 'gmail';
+            if (['yahoo.com', 'ymail.com', 'rocketmail.com'].includes(domain)) return 'yahoo';
+            if (['outlook.com', 'hotmail.com', 'live.com', 'msn.com'].includes(domain)) return 'microsoft';
+            return 'other';
+        }
+
+        function interleaveByProvider(emails) {
+            const buckets = { gmail: [], microsoft: [], other: [], yahoo: [] };
+            emails.forEach(email => { (buckets[providerOf(email)] || buckets.other).push(email); });
+            const order = ['gmail', 'microsoft', 'other', 'yahoo'];
+            const out = [];
+            let added = true;
+            while (added) {
+                added = false;
+                for (const key of order) {
+                    const next = buckets[key].shift();
+                    if (next) { out.push(next); added = true; }
+                }
+            }
+            return out;
+        }
 
         BulkJob.guardNavigationWhileRunning();
 
@@ -81,23 +107,28 @@ const uploadForm    = document.getElementById('uploadForm');
             job.status = 'running';
             BulkJob.saveBulkJob(job);
 
-            while (nextEmailIndex < emails.length) {
-                const batch = emails.slice(nextEmailIndex, nextEmailIndex + BATCH);
-                try {
-                    const bulkRes = await axios.post('/api/verify/bulk', { emails: batch, source: 'bulk' }, { timeout: 300000 });
-                    for (const item of bulkRes.data.results) {
-                        job.verifyMap[item.email] = item;
-                    }
-                } catch (_) {
-                    for (const email of batch) {
+            const pending = interleaveByProvider(emails.filter(email => !job.verifyMap[email]));
+            let cursor = 0;
+            let completed = Object.keys(job.verifyMap || {}).length;
+
+            async function worker() {
+                while (cursor < pending.length) {
+                    const email = pending[cursor];
+                    cursor += 1;
+                    try {
+                        const res = await axios.post('/api/verify/single', { email, source: 'bulk' }, { timeout: 180000 });
+                        job.verifyMap[email] = res.data;
+                    } catch (_) {
                         job.verifyMap[email] = { email, valid: false, domain_valid: false, mailbox_verified: 'no_smtp', status: 'error' };
                     }
+                    completed += 1;
+                    job.completedCount = completed;
+                    syncResultsUI(job);
+                    BulkJob.saveBulkJob(job);
                 }
-                nextEmailIndex += batch.length;
-                job.nextEmailIndex = nextEmailIndex;
-                syncResultsUI(job);
-                BulkJob.saveBulkJob(job);
             }
+
+            await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
             job.status = 'complete';
             jobRunning = false;

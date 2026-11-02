@@ -71,6 +71,11 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
                     document.getElementById('min' + capitalize(p)).value = data.providerPerMinute[p];
                     document.getElementById('day' + capitalize(p)).value = data.providerPerDay[p];
                 });
+                const skipped = data.skippedProviders || [];
+                PROVIDERS.forEach(function (p) {
+                    const el = document.getElementById('skip' + capitalize(p));
+                    if (el) el.checked = skipped.indexOf(p) !== -1;
+                });
                 renderProviderBackoff(data.providerBackoff || {});
                 renderLimiterUsage(data.usage || {});
                 renderEngineUsage(data.engineUsage);
@@ -121,6 +126,10 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
                 providerPerSecond: {},
                 providerPerMinute: {},
                 providerPerDay: {},
+                skippedProviders: PROVIDERS.filter(function (p) {
+                    const el = document.getElementById('skip' + capitalize(p));
+                    return el && el.checked;
+                }),
             };
             PROVIDERS.forEach(p => {
                 payload.providerPerSecond[p] = num('sec' + capitalize(p));
@@ -188,6 +197,16 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
                         </td>
                         <td>${statusCell(b)}</td>
                         <td>${usageCell(b)}</td>
+                        <td>
+                            <div class="d-flex align-items-center gap-1">
+                                <input class="input sm" style="width:60px" data-role="perSecond" placeholder="auto" value="${b.limits?.perSecond ?? ''}" title="Starts per second">
+                                <input class="input sm" style="width:66px" data-role="perMinute" placeholder="auto" value="${b.limits?.perMinute ?? ''}" title="Starts per minute">
+                                <input class="input sm" style="width:76px" data-role="perDay" placeholder="auto" value="${b.limits?.perDay ?? ''}" title="Starts per day">
+                                <button class="btn sm" data-action="save-limits" title="Save limits"><i class="fa-solid fa-check"></i></button>
+                                ${b.limitsOverridden ? '<button class="btn sm ghost" data-action="reset-limits" title="Follow the global limits again"><i class="fa-solid fa-rotate-left"></i></button>' : ''}
+                            </div>
+                            <div class="small text-muted mt-1">${b.limitsOverridden ? 'own limits (global ignored)' : 'follows global'}</div>
+                        </td>
                         <td class="text-end">
                             <button class="btn btn-sm ${b.locked ? 'btn-warning' : 'btn-outline-secondary'}" data-action="lock" title="${b.locked ? 'Unlock backend' : 'Lock backend (do not use)'}">
                                 <i class="fa-solid ${b.locked ? 'fa-lock' : 'fa-lock-open'}"></i>
@@ -272,6 +291,31 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
             }
 
             if (action === 'save-limits') {
+                const readLimit = role => {
+                    const el = row.querySelector('[data-role="' + role + '"]');
+                    const raw = (el && el.value || '').trim();
+                    return raw === '' ? null : Number(raw);
+                };
+                try {
+                    await axios.put('/api/reacher-backends/' + id, {
+                        limits: { perSecond: readLimit('perSecond'), perMinute: readLimit('perMinute'), perDay: readLimit('perDay') },
+                    });
+                    showToast('Limits saved');
+                    await loadBackends();
+                } catch (error) {
+                    showToast((error.response && error.response.data && error.response.data.message) || 'Could not save limits', 'error');
+                }
+                return;
+            }
+
+            if (action === 'reset-limits') {
+                try {
+                    await axios.put('/api/reacher-backends/' + id, { resetLimits: true });
+                    showToast('Backend follows the global limits again');
+                    await loadBackends();
+                } catch (error) {
+                    showToast('Could not reset limits', 'error');
+                }
                 return;
             }
         });

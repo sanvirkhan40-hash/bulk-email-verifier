@@ -10,6 +10,14 @@ const ReacherBackendSchema = new mongoose.Schema({
     // and keeps its history, but the pool never dispatches checks to it.
     locked: { type: Boolean, default: false },
     order: { type: Number, default: 0 },
+    // Optional per-backend limits. null = follow the global rate limits.
+    // When ANY value is set here, this backend ignores the global values
+    // entirely and uses only what is set (missing pieces become unlimited).
+    limits: {
+        perSecond: { type: Number, default: null, min: 0, max: 50 },
+        perMinute: { type: Number, default: null, min: 0, max: 1000 },
+        perDay: { type: Number, default: null, min: 0, max: 200000 },
+    },
     lastStatus: {
         ok: { type: Boolean, default: false },
         version: { type: String, default: '' },

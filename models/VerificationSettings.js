@@ -31,6 +31,11 @@ const VerificationSettingsSchema = new mongoose.Schema({
     },
 
     updatedBy: { type: String, default: '' },
+
+    // Providers that are never sent to a Reacher. They resolve instantly as
+    // "unknown" (skipped), which is the honest answer when the engine cannot
+    // verify them (e.g. Yahoo). Empty by default.
+    skippedProviders: { type: [String], default: [] },
 }, { timestamps: true });
 
 module.exports = mongoose.model('VerificationSettings', VerificationSettingsSchema);

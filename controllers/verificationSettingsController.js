@@ -11,6 +11,7 @@ const RANGE = {
     providerPerSecond: [1, 10],
     providerPerMinute: [0, 600],
     providerPerDay: [0, 50000],
+    skippedProviders: null,
 };
 
 // Documents written before per-minute/per-day limits existed have no such fields,
@@ -62,6 +63,7 @@ const getVerificationSettings = async (req, res) => {
             providerPerSecond: { ...FALLBACK.providerPerSecond, ...(settings.providerPerSecond || {}) },
             providerPerMinute: { ...FALLBACK.providerPerMinute, ...(settings.providerPerMinute || {}) },
             providerPerDay: { ...FALLBACK.providerPerDay, ...(settings.providerPerDay || {}) },
+            skippedProviders: settings.skippedProviders || [],
             providerBackoff: getProviderBackoffStatus(),
             usage: getLimiterUsage(),
             engineUsage: getEngineUsage(),
@@ -100,10 +102,17 @@ const updateVerificationSettings = async (req, res) => {
         const perDay = pickProviderGroup(body.providerPerDay, current?.providerPerDay, RANGE.providerPerDay, FALLBACK.providerPerDay);
         if (perDay.error) return res.status(400).json({ message: perDay.error });
 
+        const skippedProviders = body.skippedProviders === undefined
+            ? undefined
+            : (Array.isArray(body.skippedProviders)
+                ? body.skippedProviders.filter(p => PROVIDERS.includes(p))
+                : []);
+
         const settings = await VerificationSettings.findOneAndUpdate(
             { key: 'global' },
             {
                 $set: {
+                    ...(skippedProviders === undefined ? {} : { skippedProviders }),
                     ...scalar,
                     providerPerSecond: perSecond.value,
                     providerPerMinute: perMinute.value,
