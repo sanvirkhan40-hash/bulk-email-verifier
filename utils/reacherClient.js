@@ -45,6 +45,14 @@ function mapReacherToReport(data, email) {
     const disposable = !!misc.is_disposable;
     const checks = [];
 
+    // Microsoft 365 (custom domains included) answers a probe it dislikes with
+    // the same generic 5xx it uses for "no such mailbox": DBEB, alias-only
+    // recipients and policy blocks are indistinguishable from a missing user.
+    // The rejection therefore cannot be read as "invalid".
+    const microsoftHosted = mxRecords.some(record => /\.mail\.protection\.outlook\.com$/i.test(record.host));
+    const smtpMethod = String(data?.debug?.smtp?.verif_method?.type || '').toLowerCase() === 'smtp';
+    const microsoftProbe = microsoftHosted && smtpMethod;
+
     checks.push({
         step: 'syntax',
         passed: syntaxValid,
@@ -110,7 +118,9 @@ function mapReacherToReport(data, email) {
                     : 'SMTP mailbox not confirmed (Reacher)'),
             detail: deliverable
                 ? '250 OK / is_deliverable'
-                : `is_reachable: ${reachable}`,
+                : (microsoftProbe && reachable === 'invalid'
+                    ? 'is_reachable: invalid — Microsoft 365 rejection is not conclusive (DBEB / policy block)'
+                    : `is_reachable: ${reachable}`),
         });
     } else if (smtpErrorText) {
         checks.push({
@@ -132,9 +142,9 @@ function mapReacherToReport(data, email) {
         // catch-all, full inbox). The mailbox exists; it is not "invalid".
         mailboxVerified = 'risky';
     } else if (reachable === 'invalid' && smtpRan) {
-        mailboxVerified = 'no';
+        mailboxVerified = microsoftProbe ? 'no_smtp' : 'no';
     } else if (smtpRan && !deliverable) {
-        mailboxVerified = 'no';
+        mailboxVerified = microsoftProbe ? 'no_smtp' : 'no';
     }
 
     const valid = mailboxVerified === 'yes';
@@ -146,6 +156,9 @@ function mapReacherToReport(data, email) {
     } else if (mailboxVerified === 'risky') {
         verdictSummary =
             `${email} exists but is a risky mailbox (role account or catch-all) — not confirmed for outreach`;
+    } else if (mailboxVerified === 'no_smtp' && domainValid && microsoftProbe && reachable === 'invalid') {
+        verdictSummary =
+            `${email} — Microsoft 365 rejected the probe, so the mailbox could not be confirmed either way`;
     } else if (mailboxVerified === 'no_smtp' && domainValid) {
         verdictSummary =
             `${email} — domain OK but mailbox could not be verified (SMTP blocked or unknown)`;
@@ -171,6 +184,7 @@ function mapReacherToReport(data, email) {
         verdict_summary: verdictSummary,
         syntax_valid: syntaxValid,
         smtp_check_ran: smtpRan,
+        microsoft_unverified: Boolean(microsoftProbe && reachable === 'invalid'),
         engine: 'reacher',
         reacher_raw: data,
     };
