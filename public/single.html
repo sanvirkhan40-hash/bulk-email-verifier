@@ -10,115 +10,8 @@
     <meta name="theme-color" content="#6366f1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/style.css">
-    <style>
-        /* ── AI Result Card ───────────────────────────────────────── */
-        .result-card {
-            border-radius: 20px;
-            overflow: hidden;
-            transition: all 0.4s ease;
-        }
-        .trust-score-ring {
-            position: relative;
-            width: 140px;
-            height: 140px;
-            margin: 0 auto 16px;
-        }
-        .trust-score-ring svg {
-            transform: rotate(-90deg);
-        }
-        .trust-score-ring .score-text {
-            position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-        }
-        .trust-score-ring .score-number {
-            font-size: 2rem;
-            font-weight: 800;
-            line-height: 1;
-        }
-        .trust-score-ring .score-label {
-            font-size: 0.65rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            opacity: 0.7;
-        }
-        .ai-badge {
-            background: linear-gradient(135deg, #6366f1, #a855f7);
-            color: white;
-            font-size: 0.7rem;
-            font-weight: 700;
-            padding: 3px 10px;
-            border-radius: 20px;
-            letter-spacing: 0.08em;
-        }
-        .check-row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 16px;
-            border-radius: 10px;
-            margin-bottom: 8px;
-            background: rgba(0,0,0,0.03);
-            transition: background 0.2s;
-        }
-        body.dark-mode .check-row {
-            background: rgba(255,255,255,0.04);
-        }
-        .check-row:hover { background: rgba(0,0,0,0.06); }
-        body.dark-mode .check-row:hover { background: rgba(255,255,255,0.08); }
-        .check-icon { width: 28px; text-align: center; font-size: 1.1rem; flex-shrink: 0; }
-        .check-label { font-weight: 600; flex: 1; font-size: 0.9rem; }
-        .check-value { font-size: 0.82rem; opacity: 0.7; }
-        .risk-chip {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            margin: 3px;
-        }
-        .risk-chip.danger { background: rgba(220,53,69,0.12); color: #dc3545; border: 1px solid rgba(220,53,69,0.3); }
-        .risk-chip.success { background: rgba(40,167,69,0.12); color: #28a745; border: 1px solid rgba(40,167,69,0.3); }
-        .recommendation-banner {
-            padding: 12px 20px;
-            border-radius: 12px;
-            font-weight: 700;
-            font-size: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .recommendation-banner.accept { background: rgba(40,167,69,0.12); color: #28a745; border: 1px solid rgba(40,167,69,0.3); }
-        .recommendation-banner.review  { background: rgba(255,193,7,0.12); color: #c69500; border: 1px solid rgba(255,193,7,0.3); }
-        .recommendation-banner.reject  { background: rgba(220,53,69,0.12); color: #dc3545; border: 1px solid rgba(220,53,69,0.3); }
-        /* Typewriter animation for AI explanation */
-        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-        .cursor { display: inline-block; width: 2px; height: 1em; background: currentColor; margin-left: 2px; animation: blink 0.8s infinite; vertical-align: text-bottom; }
-        /* Pulse ring for loading */
-        @keyframes pulse-ring {
-            0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(99,102,241,0.5); }
-            70% { transform: scale(1); box-shadow: 0 0 0 16px rgba(99,102,241,0); }
-            100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(99,102,241,0); }
-        }
-        .ai-loader { animation: pulse-ring 1.5s infinite; }
-        /* Animated score circle */
-        .score-circle-track { fill: none; stroke: rgba(0,0,0,0.08); stroke-width: 10; }
-        body.dark-mode .score-circle-track { stroke: rgba(255,255,255,0.1); }
-        .score-circle-fill {
-            fill: none;
-            stroke-width: 10;
-            stroke-linecap: round;
-            transition: stroke-dashoffset 1.2s cubic-bezier(0.4,0,0.2,1), stroke 0.5s;
-        }
-        .input-glow:focus {
-            box-shadow: 0 0 0 3px rgba(99,102,241,0.25) !important;
-            border-color: #6366f1 !important;
-        }
-    </style>
+
 </head>
 <body>
     <div id="toast-container" class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1050;"></div>
@@ -179,7 +72,7 @@
         <div id="loader" class="col-lg-9 mx-auto text-center py-5 d-none fade-in">
             <div class="glass-card p-5">
                 <div class="ai-loader d-inline-flex align-items-center justify-content-center rounded-circle mb-4"
-                    style="width:80px;height:80px;background:linear-gradient(135deg,#6366f1,#a855f7);">
+                    style="width:80px;height:80px;background:var(--primary);">
                     <i class="fa-solid fa-brain text-white fa-2x"></i>
                 </div>
                 <h5 class="fw-bold mb-2">Verifying your email...</h5>
