@@ -626,3 +626,26 @@ html[data-theme="dark"] .side-link.is-active { color: var(--brand); }
 .engine-status.offline { background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 32%, transparent); color: var(--bad); }
 .engine-status .status-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
 
+
+/* Per-backend limits: each Reacher is its own block, so the limit boxes are
+   never pushed off-screen by a wide table. */
+.backend-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    background: var(--surface);
+    margin-bottom: 10px;
+}
+.backend-card:last-child { margin-bottom: 0; }
+.backend-limits {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border);
+}
+.limits-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    max-width: 460px;
+}
+.backend-card .limits-grid .input { width: 100%; }

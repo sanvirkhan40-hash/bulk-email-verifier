@@ -72,14 +72,7 @@
                     <div class="card-body" style="padding-bottom:8px">
                         <p class="small text-muted" id="reacherSummary"></p>
                     </div>
-                    <div class="table-wrap">
-                        <table class="table">
-                            <thead>
-                                <tr><th>Backend</th><th>Status</th><th>Used today</th><th>Limits /sec · /min · /day</th><th class="right">Actions</th></tr>
-                            </thead>
-                            <tbody id="reacherRows"></tbody>
-                        </table>
-                    </div>
+                    <div id="backendsList" style="padding:0 16px 12px"></div>
                     <div class="card-foot">
                         <p class="small text-muted mb-3" id="reacherNote"></p>
                         <div class="grid cols-3" style="gap:8px">
@@ -87,9 +80,14 @@
                             <input class="input sm" id="newUrl" placeholder="https://reacher.example.com">
                             <input class="input sm" id="newSecret" type="password" placeholder="Shared secret">
                         </div>
+                        <div class="limits-grid mt-2">
+                            <label class="field"><span class="small text-muted">Per second (optional)</span><input class="input sm" id="newPerSecond" placeholder="auto"></label>
+                            <label class="field"><span class="small text-muted">Per minute (optional)</span><input class="input sm" id="newPerMinute" placeholder="auto"></label>
+                            <label class="field"><span class="small text-muted">Per day (optional)</span><input class="input sm" id="newPerDay" placeholder="auto"></label>
+                        </div>
                         <div class="d-flex align-items-center gap-2 mt-3 flex-wrap">
                             <button class="btn sm primary" id="addBackendBtn"><i class="fa-solid fa-plus"></i>Add backend</button>
-                            <span class="small text-muted">Pacing is not set per backend — every Reacher follows the limits tab.</span>
+                            <span class="small text-muted">Leave the limit boxes empty to follow the global limits.</span>
                         </div>
                     </div>
                 </div>
@@ -225,7 +223,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="/js/app.js"></script>
-<script src="/js/pages/settings.js"></script>
+<script src="/js/app.js?v=2"></script>
+<script src="/js/pages/settings.js?v=2"></script>
 </body>
 </html>

@@ -182,39 +182,48 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
         function renderBackends(data) {
             backends = data.backends || [];
             const summary = document.getElementById('reacherSummary');
-            const rows = document.getElementById('reacherRows');
-            const note = document.getElementById('reacherNote');
+            const list = document.getElementById('backendsList');
+            if (!list) return;
 
             if (!backends.length) {
-                rows.innerHTML = '<tr><td colspan="5" class="text-muted small">No backends yet. Add the URL of your Reacher service below.</td></tr>';
+                list.innerHTML = '<div class="notice">No backends yet. Add the URL of your Reacher service below.</div>';
             } else {
-                rows.innerHTML = backends.map(b => `
-                    <tr data-id="${b.id}">
-                        <td>
-                            <div class="fw-medium">${b.name}</div>
-                            <div class="small text-muted backend-url">${b.url}</div>
-                            <div class="small text-muted">${b.hasSecret ? (b.secretStatus === 'ok' ? 'secret saved' : 'secret unreadable — re-enter') : 'no secret'}</div>
-                        </td>
-                        <td>${statusCell(b)}</td>
-                        <td>${usageCell(b)}</td>
-                        <td>
-                            <div class="d-flex align-items-center gap-1">
-                                <input class="input sm" style="width:60px" data-role="perSecond" placeholder="auto" value="${b.limits?.perSecond ?? ''}" title="Starts per second">
-                                <input class="input sm" style="width:66px" data-role="perMinute" placeholder="auto" value="${b.limits?.perMinute ?? ''}" title="Starts per minute">
-                                <input class="input sm" style="width:76px" data-role="perDay" placeholder="auto" value="${b.limits?.perDay ?? ''}" title="Starts per day">
-                                <button class="btn sm" data-action="save-limits" title="Save limits"><i class="fa-solid fa-check"></i></button>
-                                ${b.limitsOverridden ? '<button class="btn sm ghost" data-action="reset-limits" title="Follow the global limits again"><i class="fa-solid fa-rotate-left"></i></button>' : ''}
+                list.innerHTML = backends.map(b => `
+                    <div class="backend-card" data-id="${b.id}">
+                        <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                            <div>
+                                <div class="fw-medium">${b.name} ${statusCell(b)}</div>
+                                <div class="small text-muted backend-url">${b.url}</div>
+                                <div class="small text-muted">${b.hasSecret ? (b.secretStatus === 'ok' ? 'secret saved' : 'secret unreadable — re-enter') : 'no secret'}</div>
                             </div>
-                            <div class="small text-muted mt-1">${b.limitsOverridden ? 'own limits (global ignored)' : 'follows global'}</div>
-                        </td>
-                        <td class="text-end">
-                            <button class="btn btn-sm ${b.locked ? 'btn-warning' : 'btn-outline-secondary'}" data-action="lock" title="${b.locked ? 'Unlock backend' : 'Lock backend (do not use)'}">
-                                <i class="fa-solid ${b.locked ? 'fa-lock' : 'fa-lock-open'}"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-primary" data-action="test" title="Test connection"><i class="fa-solid fa-vial"></i></button>
-                            <button class="btn btn-sm btn-outline-danger" data-action="delete" title="Remove backend"><i class="fa-solid fa-trash"></i></button>
-                        </td>
-                    </tr>
+                            <div class="d-flex align-items-center gap-1">
+                                <button class="btn btn-sm ${b.locked ? 'btn-warning' : 'btn-outline-secondary'}" data-action="lock" title="${b.locked ? 'Unlock backend' : 'Lock backend (do not use)'}">
+                                    <i class="fa-solid ${b.locked ? 'fa-lock' : 'fa-lock-open'}"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary" data-action="test" title="Test connection"><i class="fa-solid fa-vial"></i></button>
+                                <button class="btn btn-sm btn-outline-danger" data-action="delete" title="Remove backend"><i class="fa-solid fa-trash"></i></button>
+                            </div>
+                        </div>
+
+                        <div class="mt-2">${usageCell(b)}</div>
+
+                        <div class="backend-limits">
+                            <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
+                                <strong class="small">Limits for this Reacher</strong>
+                                <span class="small ${b.limitsOverridden ? 'text-warning' : 'text-muted'}">${b.limitsOverridden ? 'own limits — the global row is ignored' : 'following the global limits'}</span>
+                            </div>
+                            <div class="limits-grid">
+                                <label class="field"><span class="small text-muted">Per second</span><input class="input sm" data-role="perSecond" placeholder="auto" value="${b.limits?.perSecond ?? ''}"></label>
+                                <label class="field"><span class="small text-muted">Per minute</span><input class="input sm" data-role="perMinute" placeholder="auto" value="${b.limits?.perMinute ?? ''}"></label>
+                                <label class="field"><span class="small text-muted">Per day</span><input class="input sm" data-role="perDay" placeholder="auto" value="${b.limits?.perDay ?? ''}"></label>
+                            </div>
+                            <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
+                                <button class="btn sm primary" data-action="save-limits"><i class="fa-solid fa-check"></i>Save limits</button>
+                                ${b.limitsOverridden ? '<button class="btn sm" data-action="reset-limits"><i class="fa-solid fa-rotate-left"></i>Use global limits</button>' : ''}
+                                <span class="small text-muted">Empty box = use the global value for that window.</span>
+                            </div>
+                        </div>
+                    </div>
                 `).join('');
             }
 
@@ -243,10 +252,10 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
             }
         }
 
-        document.getElementById('reacherRows').addEventListener('click', async event => {
+        document.getElementById('backendsList').addEventListener('click', async event => {
             const button = event.target.closest('button[data-action]');
             if (!button) return;
-            const row = button.closest('tr');
+            const row = button.closest('[data-id]');
             const id = row.getAttribute('data-id');
             const backend = backends.find(b => b.id === id);
             if (!backend) return;
@@ -329,9 +338,22 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
                 return;
             }
             try {
-                await axios.post('/api/reacher-backends', { name, url, secret });
+                const limitOf = id => {
+                    const raw = (document.getElementById(id).value || '').trim();
+                    return raw === '' ? null : Number(raw);
+                };
+                await axios.post('/api/reacher-backends', {
+                    name,
+                    url,
+                    secret,
+                    limits: {
+                        perSecond: limitOf('newPerSecond'),
+                        perMinute: limitOf('newPerMinute'),
+                        perDay: limitOf('newPerDay'),
+                    },
+                });
                 showToast('Backend added');
-                ['newName', 'newUrl', 'newSecret'].forEach(id => { document.getElementById(id).value = ''; });
+                ['newName', 'newUrl', 'newSecret', 'newPerSecond', 'newPerMinute', 'newPerDay'].forEach(id => { document.getElementById(id).value = ''; });
                 await loadBackends();
             } catch (error) {
                 showToast(error.response?.data?.message || 'Could not add backend', 'error');
