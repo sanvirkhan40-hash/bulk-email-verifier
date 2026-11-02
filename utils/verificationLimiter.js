@@ -172,10 +172,13 @@ function commitStart(scope, now) {
 
 function limitsFor(settings, provider) {
     return {
+        // Global row: the per-second rate is the one shared ceiling for every
+        // Reacher. Its per-minute/per-day numbers are consumed by the pool as
+        // EACH backend's own budget, so they are not applied here as a total.
         global: {
             perSecond: settings.globalPerSecond,
-            perMinute: settings.globalPerMinute,
-            perDay: settings.globalPerDay,
+            perMinute: 0,
+            perDay: 0,
         },
         [provider]: {
             perSecond: settings.providerPerSecond?.[provider],
@@ -201,27 +204,38 @@ async function pump() {
             if (active >= settings.maxConcurrent) break;
 
             const now = Date.now();
-            // Find the first queued provider that is not currently paused.
-            const index = queue.findIndex(item => (providerHealth.get(item.provider)?.pausedUntil || 0) <= now);
-            if (index < 0) {
+            // Any queued item whose provider is not paused is a candidate. The
+            // first one with room wins, so one provider sitting at its per-minute
+            // cap never blocks checks for the other providers behind it.
+            const candidates = queue
+                .map((item, index) => ({ item, index }))
+                .filter(({ item }) => (providerHealth.get(item.provider)?.pausedUntil || 0) <= now);
+
+            if (!candidates.length) {
                 const earliest = Math.min(...queue.map(item => providerHealth.get(item.provider)?.pausedUntil || now + 1000));
                 nextDelay = Math.max(50, earliest - now);
                 break;
             }
 
-            const item = queue[index];
-            const limits = limitsFor(settings, item.provider);
-            const wait = Math.max(
-                scopeWait('global', limits.global, now),
-                scopeWait(item.provider, limits[item.provider], now),
-            );
+            let chosen = null;
+            let soonestWait = Infinity;
+            for (const candidate of candidates) {
+                const limits = limitsFor(settings, candidate.item.provider);
+                const wait = Math.max(
+                    scopeWait('global', limits.global, now),
+                    scopeWait(candidate.item.provider, limits[candidate.item.provider], now),
+                );
+                if (wait === 0) { chosen = candidate; break; }
+                soonestWait = Math.min(soonestWait, wait);
+            }
 
-            if (wait > 0) {
-                nextDelay = wait;
+            if (!chosen) {
+                nextDelay = Number.isFinite(soonestWait) ? soonestWait : 1000;
                 break;
             }
 
-            queue.splice(index, 1);
+            const { item } = chosen;
+            queue.splice(chosen.index, 1);
             active += 1;
             commitStart('global', now);
             commitStart(item.provider, now);
@@ -289,6 +303,9 @@ function getLimiterUsage() {
     return usage;
 }
 
+// Shared with the Reacher pool so per-backend budgets come from one place.
+const getEffectiveSettings = readSettings;
+
 module.exports = {
     runWithVerificationLimit,
     providerFor,
@@ -296,5 +313,6 @@ module.exports = {
     isTransientProviderFailure,
     getLimiterUsage,
     invalidateSettingsCache,
+    readSettings: getEffectiveSettings,
     PROVIDERS,
 };

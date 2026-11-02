@@ -137,6 +137,7 @@
                                     <th>Domain</th>
                                     <th>Mailbox</th>
                                     <th>Valid</th>
+                                    <th>Checked by</th>
                                     <th>SMTP Response</th>
                                 </tr>
                             </thead>
@@ -205,6 +206,9 @@
                     valid: !!v.valid,
                     smtp_response: v.smtp_response || '',
                     status: v.status || 'invalid',
+                    engine: v.engine || '',
+                    backend: v.backend || '',
+                    fallback: Boolean(v.report && v.report.fallback_from),
                 };
                 results.push(item);
                 stats.completed++;
@@ -347,6 +351,12 @@
             return str.length > n ? str.slice(0, n) + '…' : str;
         }
 
+        function engineLabel(item) {
+            if (!item.engine) return '—';
+            if (item.engine === 'reacher') return item.backend || 'Reacher';
+            return item.fallback ? 'truemail-go (fallback)' : 'truemail-go';
+        }
+
         let rowIndex = 0;
         function addResultRow(item) {
             rowIndex++;
@@ -354,10 +364,11 @@
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td class="text-muted small">${rowIndex}</td>
-                <td class="fw-medium">${item.email}</td>
+                <td class="fw-medium text-break">${item.email}</td>
                 <td>${ynBadge(item.domain_valid)}</td>
                 <td>${mailboxBadge(item.mailbox_verified)}</td>
                 <td>${ynBadge(item.valid)}</td>
+                <td class="small text-muted text-nowrap">${engineLabel(item)}</td>
                 <td class="small text-muted" title="${item.smtp_response || ''}">${truncate(item.smtp_response)}</td>
             `;
             tbody.appendChild(tr);

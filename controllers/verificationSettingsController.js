@@ -1,5 +1,6 @@
 const VerificationSettings = require('../models/VerificationSettings');
 const { getProviderBackoffStatus, getLimiterUsage, invalidateSettingsCache, PROVIDERS } = require('../utils/verificationLimiter');
+const { getEngineUsage } = require('../utils/verificationEngine');
 const { isAdmin } = require('../middlewares/adminMiddleware');
 
 const RANGE = {
@@ -63,6 +64,7 @@ const getVerificationSettings = async (req, res) => {
             providerPerDay: { ...FALLBACK.providerPerDay, ...(settings.providerPerDay || {}) },
             providerBackoff: getProviderBackoffStatus(),
             usage: getLimiterUsage(),
+            engineUsage: getEngineUsage(),
             updatedAt: settings.updatedAt,
             updatedBy: settings.updatedBy || '',
         });

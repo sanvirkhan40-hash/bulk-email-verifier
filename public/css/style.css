@@ -692,3 +692,30 @@ body.dark-mode .nav-link.active { color: #12161d; }
     }
     .ai-loader { animation: none; border-top-color: var(--primary); }
 }
+
+/* ── Overflow and truncation safety ───────────────────────────────────────
+   Long emails, backend URLs and status text used to overflow their cells or
+   get clipped. Wrap them instead of hiding information. */
+
+.table td,
+.table th { overflow-wrap: break-word; }
+
+.table .text-nowrap { overflow-wrap: normal; }
+
+.backend-url,
+.email-cell { word-break: break-all; }
+
+.glass-card { overflow-wrap: break-word; }
+
+.badge { max-width: 100%; }
+
+/* Flex/grid children default to min-width:auto, which forces horizontal
+   scrolling when a child contains a long unbreakable string. */
+.row > [class*="col-"] { min-width: 0; }
+
+.d-flex > * { min-width: 0; }
+
+.brand-title { line-height: 1.25; }
+
+/* Sidebar nav must scroll rather than push the footer off screen. */
+.sidebar nav { min-height: 0; }
