@@ -90,34 +90,6 @@
             </section>
 
             <section class="tab-panel" data-panel="limits">
-                <dialog id="limitsDialog" class="modal">
-                    <div class="modal-card">
-                        <h3 class="mb-1">Limits for <span id="limitsName">this Reacher</span></h3>
-                        <p class="small text-muted">Leave a box empty to follow the global value. Provider rows only tighten that provider for this Reacher.</p>
-                        <label class="notice mb-3" style="cursor:pointer">
-                            <input type="checkbox" id="limitsCustom">
-                            <span>Use custom limits for this Reacher (ignore the global sheet)</span>
-                        </label>
-                        <div id="limitsGrid"></div>
-                        <div class="btn-row mt-4">
-                            <button class="btn primary" type="button" id="limitsSave"><i class="fa-solid fa-floppy-disk"></i>Save limits</button>
-                            <button class="btn" type="button" id="limitsCancel">Cancel</button>
-                        </div>
-                    </div>
-                </dialog>
-
-                <dialog id="askLimitsDialog" class="modal">
-                    <div class="modal-card">
-                        <h3 class="mb-1">Reacher added</h3>
-                        <p>Do you want to set limits for <strong id="askName"></strong> now?</p>
-                        <p class="small text-muted">If you skip, it follows the global limits — you can edit it any time with the Limits button.</p>
-                        <div class="btn-row mt-3">
-                            <button class="btn primary" type="button" id="askYes">Yes, set limits</button>
-                            <button class="btn" type="button" id="askNo">No, follow global</button>
-                        </div>
-                    </div>
-                </dialog>
-
                 <div class="card" id="verificationSpeedCard" style="display:none">
                     <div class="card-head">
                         <h3>Rate limits</h3>
@@ -246,8 +218,36 @@
     </main>
 </div>
 
+                <dialog id="limitsDialog" class="modal">
+                    <div class="modal-card">
+                        <h3 class="mb-1">Limits for <span id="limitsName">this Reacher</span></h3>
+                        <p class="small text-muted">Leave a box empty to follow the global value. Provider rows only tighten that provider for this Reacher.</p>
+                        <label class="notice mb-3" style="cursor:pointer">
+                            <input type="checkbox" id="limitsCustom">
+                            <span>Use custom limits for this Reacher (ignore the global sheet)</span>
+                        </label>
+                        <div id="limitsGrid"></div>
+                        <div class="btn-row mt-4">
+                            <button class="btn primary" type="button" id="limitsSave"><i class="fa-solid fa-floppy-disk"></i>Save limits</button>
+                            <button class="btn" type="button" id="limitsCancel">Cancel</button>
+                        </div>
+                    </div>
+                </dialog>
+
+                <dialog id="askLimitsDialog" class="modal">
+                    <div class="modal-card">
+                        <h3 class="mb-1">Reacher added</h3>
+                        <p>Do you want to set limits for <strong id="askName"></strong> now?</p>
+                        <p class="small text-muted">If you skip, it follows the global limits — you can edit it any time with the Limits button.</p>
+                        <div class="btn-row mt-3">
+                            <button class="btn primary" type="button" id="askYes">Yes, set limits</button>
+                            <button class="btn" type="button" id="askNo">No, follow global</button>
+                        </div>
+                    </div>
+                </dialog>
+
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="/js/app.js?v=3"></script>
-<script src="/js/pages/settings.js?v=3"></script>
+<script src="/js/app.js?v=4"></script>
+<script src="/js/pages/settings.js?v=4"></script>
 </body>
 </html>

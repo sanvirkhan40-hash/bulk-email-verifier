@@ -219,11 +219,18 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
                 </table>`;
             grid.dataset.ready = '1';
 
+            const limitsDialog = document.getElementById('limitsDialog');
+            const askDialog = document.getElementById('askLimitsDialog');
+            [limitsDialog, askDialog].forEach(dialog => {
+                if (!dialog) return;
+                dialog.addEventListener('click', event => { if (event.target === dialog) hideDialog(dialog); });
+            });
+
             document.getElementById('limitsCustom').addEventListener('change', event => {
                 grid.querySelectorAll('input').forEach(input => { input.disabled = !event.target.checked; });
             });
             document.getElementById('limitsCancel').addEventListener('click', () => {
-                document.getElementById('limitsDialog').close();
+                hideDialog(document.getElementById('limitsDialog'));
             });
             document.getElementById('limitsSave').addEventListener('click', async () => {
                 if (!limitsBackend) return;
@@ -245,13 +252,33 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
                         });
                         await axios.put('/api/reacher-backends/' + limitsBackend.id, { limits: payload });
                     }
-                    document.getElementById('limitsDialog').close();
+                    hideDialog(document.getElementById('limitsDialog'));
                     showToast('Limits saved');
                     await loadBackends();
                 } catch (error) {
                     showToast((error.response && error.response.data && error.response.data.message) || 'Could not save limits', 'error');
                 }
             });
+        }
+
+        function hideDialog(dialog) {
+            if (!dialog) return;
+            if (typeof dialog.close === 'function') {
+                try { if (dialog.open) dialog.close(); } catch (_) { /* ignore */ }
+            }
+            dialog.removeAttribute('open');
+        }
+
+        function showDialog(dialog) {
+            if (!dialog) return;
+            hideDialog(dialog);
+            if (typeof dialog.showModal === 'function') {
+                try {
+                    dialog.showModal();
+                    return;
+                } catch (_) { /* fall through to the plain open attribute */ }
+            }
+            dialog.setAttribute('open', '');
         }
 
         function openLimitsModal(backend) {
@@ -270,7 +297,7 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
                 input.value = value === null || value === undefined ? '' : value;
                 input.disabled = !custom;
             });
-            document.getElementById('limitsDialog').showModal();
+            showDialog(document.getElementById('limitsDialog'));
         }
 
         function renderBackends(data) {
@@ -439,13 +466,13 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
                     || { id: data && data.id, name: name, limitsOverridden: false, limits: null };
                 document.getElementById('askName').textContent = name;
                 document.getElementById('askYes').onclick = () => {
-                    document.getElementById('askLimitsDialog').close();
+                    hideDialog(document.getElementById('askLimitsDialog'));
                     openLimitsModal(created);
                 };
                 document.getElementById('askNo').onclick = () => {
-                    document.getElementById('askLimitsDialog').close();
+                    hideDialog(document.getElementById('askLimitsDialog'));
                 };
-                document.getElementById('askLimitsDialog').showModal();
+                showDialog(document.getElementById('askLimitsDialog'));
             } catch (error) {
                 showToast(error.response?.data?.message || 'Could not add backend', 'error');
             }
