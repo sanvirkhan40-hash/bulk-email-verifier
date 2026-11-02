@@ -1,8 +1,43 @@
 const ValidationHistory = require('../models/ValidationHistory');
 const { verifyEmailCombined } = require('../utils/verificationEngine');
-const { runWithVerificationLimit } = require('../utils/verificationLimiter');
+const { runWithVerificationLimit, providerFor, readSettings } = require('../utils/verificationLimiter');
 const { parseBulkFile } = require('../utils/csvEmailParser');
 const fs = require('fs');
+
+// Result used when a provider is configured to be skipped: no network call, no
+// Reacher, just an honest "could not verify".
+function skippedResult(email, provider) {
+    const summary = email + ' — ' + provider + ' checks are disabled, address not verified';
+    return {
+        email,
+        domain_valid: null,
+        mailbox_verified: 'no_smtp',
+        valid: false,
+        checks: [{
+            step: 'provider',
+            passed: false,
+            message: 'Provider skipped by configuration',
+            detail: 'Enable it under Settings → Rate limits → Skip these providers to check this domain.',
+        }],
+        mx_records: [],
+        misc: { disposable: false, role_account: false, free_provider: false },
+        smtp_host: '',
+        smtp_response: '',
+        syntax_valid: true,
+        smtp_check_ran: false,
+        engine: 'skipped',
+        backend: 'skipped',
+        status: 'no_smtp',
+        skipped: true,
+        verdict_summary: summary,
+        report: { email, valid: false, mailbox_verified: 'no_smtp', engine: 'skipped', skipped: true, verdict_summary: summary },
+    };
+}
+
+async function skipList() {
+    const settings = await readSettings();
+    return Array.isArray(settings.skippedProviders) ? settings.skippedProviders : [];
+}
 
 // @desc    Verify single email
 // @route   POST /api/verify/single
@@ -14,7 +49,11 @@ const verifySingleEmail = async (req, res) => {
     }
 
     try {
-        const result = await runWithVerificationLimit(email, () => verifyEmailCombined(email));
+        const skip = await skipList();
+        const provider = providerFor(email);
+        const result = skip.includes(provider)
+            ? skippedResult(email, provider)
+            : await runWithVerificationLimit(email, () => verifyEmailCombined(email));
 
         const history = await ValidationHistory.create({
             user: req.user._id,
@@ -48,7 +87,11 @@ const verifyBulkEmails = async (req, res) => {
 
     async function verifyOne(email, index) {
         try {
-            const result = await runWithVerificationLimit(email, () => verifyEmailCombined(email));
+            const skip = await skipList();
+        const provider = providerFor(email);
+        const result = skip.includes(provider)
+            ? skippedResult(email, provider)
+            : await runWithVerificationLimit(email, () => verifyEmailCombined(email));
             await ValidationHistory.create({
                 user: req.user._id,
                 email,

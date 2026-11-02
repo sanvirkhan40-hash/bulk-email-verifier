@@ -60,32 +60,56 @@ function num(value, fallback) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-// Per-backend budget comes from the single Rate limits section, not from the
-// backend record: the global row is what each Reacher may do per minute and per
-// day. Reaching the minute cap rotates to the next backend; reaching the daily
-// cap retires that backend until the next UTC day.
-function budgetFrom(settings) {
+// Effective limits for one backend. Setting ANY value on the backend makes it
+// ignore the global row completely (unset pieces then mean "unlimited" for that
+// backend). With nothing set, it follows the global row.
+function effectiveLimits(backend, settings) {
+    const own = backend.limits || {};
+    const has = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+    const overridden = has(own.perSecond) || has(own.perMinute) || has(own.perDay);
+    if (overridden) {
+        return {
+            perSecond: has(own.perSecond) ? Math.max(0, Number(own.perSecond)) : 0,
+            perMinute: has(own.perMinute) ? Math.max(0, Number(own.perMinute)) : 0,
+            perDay: has(own.perDay) ? Math.max(0, Number(own.perDay)) : 0,
+            overridden: true,
+        };
+    }
     return {
+        perSecond: Math.max(0, num(settings?.globalPerSecond, 1)),
         perMinute: Math.max(0, num(settings?.globalPerMinute, 60)),
         perDay: Math.max(0, num(settings?.globalPerDay, 5000)),
+        overridden: false,
     };
 }
 
-// Milliseconds until this window may accept another start. There is no per-second
-// gate per backend: that rate is enforced globally by verificationLimiter.
-function windowWait(state, budget, now) {
+// Backends that follow the global row share ONE per-second clock (so two
+// Reachers do not double the rate). An overridden backend paces itself.
+const sharedSecond = { secLast: 0 };
+const ownSeconds = new Map();
+
+function secondsState(backend, limits) {
+    if (!limits.overridden) return sharedSecond;
+    if (!ownSeconds.has(backend.id)) ownSeconds.set(backend.id, { secLast: 0 });
+    return ownSeconds.get(backend.id);
+}
+
+function secondWait(state, perSecond, now) {
+    if (!(perSecond > 0) || !state.secLast) return 0;
+    return Math.max(0, state.secLast + 1000 / perSecond - now);
+}
+
+function minuteWait(state, perMinute, now) {
     rollDay(state);
     pruneMinute(state, now);
+    if (!(perMinute > 0) || state.minStarts.length < perMinute) return 0;
+    return Math.max(0, state.minStarts[state.minStarts.length - perMinute] + 60000 - now);
+}
 
-    let wait = 0;
-    if (budget.perMinute > 0 && state.minStarts.length >= budget.perMinute) {
-        const oldest = state.minStarts[state.minStarts.length - budget.perMinute];
-        wait = Math.max(wait, oldest + 60000 - now);
-    }
-    if (budget.perDay > 0 && state.dayCount >= budget.perDay) {
-        wait = Math.max(wait, msUntilNextUtcDay(now));
-    }
-    return Math.max(0, wait);
+function dayWait(state, perDay, now) {
+    rollDay(state);
+    if (!(perDay > 0) || state.dayCount < perDay) return 0;
+    return msUntilNextUtcDay(now);
 }
 
 function commitStart(state, now) {
@@ -96,18 +120,22 @@ function commitStart(state, now) {
     state.dayCount += 1;
 }
 
-// A backend is usable for this provider only when BOTH its overall window and
-// that provider's window have room.
-function backendWait(backend, provider, now, budget) {
+// A backend is usable when its per-second clock, per-minute budget and daily
+// budget all allow another start.
+function backendWait(backend, provider, now, settings) {
+    const limits = effectiveLimits(backend, settings);
     const entry = usageEntry(backend.id);
     return Math.max(
-        windowWait(entry.global, budget, now),
-        windowWait(entry.providers[provider] || (entry.providers[provider] = newWindow()), budget, now)
+        secondWait(secondsState(backend, limits), limits.perSecond, now),
+        minuteWait(entry.global, limits.perMinute, now),
+        dayWait(entry.global, limits.perDay, now),
     );
 }
 
-function recordStart(backend, provider, now) {
+function recordStart(backend, provider, now, settings) {
+    const limits = effectiveLimits(backend, settings);
     const entry = usageEntry(backend.id);
+    secondsState(backend, limits).secLast = now;
     commitStart(entry.global, now);
     commitStart(entry.providers[provider] || (entry.providers[provider] = newWindow()), now);
 }
@@ -183,6 +211,11 @@ async function loadBackends({ force = false } = {}) {
             secretUnreadable: Boolean(doc.secretEnc) && !canDecrypt(doc.secretEnc),
             enabled: doc.enabled !== false,
             locked: doc.locked === true,
+            limits: {
+                perSecond: doc.limits?.perSecond ?? null,
+                perMinute: doc.limits?.perMinute ?? null,
+                perDay: doc.limits?.perDay ?? null,
+            },
             order: doc.order || 0,
             legacy: false,
         })).filter(item => item.url);
@@ -298,6 +331,15 @@ function sleep(ms) {
 // Picks backends that still have room under their own limits, trying the next one
 // when an endpoint fails. If every backend is at its limit, waits for the soonest
 // to free up (bounded) instead of failing the batch instantly.
+// Serialises the gate-check + reserve step so concurrent checks cannot both
+// slip through the same per-second slot.
+let admission = Promise.resolve();
+function admit(task) {
+    const next = admission.then(task, task);
+    admission = next.then(() => undefined, () => undefined);
+    return next;
+}
+
 async function verifyWithPool(body, { timeoutMs, provider } = {}) {
     const scope = provider || providerFor(body?.to_email || '');
     const backends = await orderedBackends();
@@ -305,60 +347,68 @@ async function verifyWithPool(body, { timeoutMs, provider } = {}) {
         throw new Error('No Reacher backend available. Add one in Settings or unlock a backend.');
     }
 
-    // Budget for every backend comes from the Rate limits section.
-    const budget = budgetFrom(await readSettings());
+    // Limits for each backend: its own values if set, otherwise the global row.
+    const settings = await readSettings();
     const maxWait = num(process.env.REACHER_POOL_MAX_WAIT_MS, DEFAULT_MAX_WAIT_MS);
     const deadline = Date.now() + maxWait;
     const attempts = [];
-    // Backends that already failed for this check are not retried, so a dead
-    // endpoint cannot eat the whole wait budget.
     const tried = new Set();
 
     while (Date.now() <= deadline) {
-        const now = Date.now();
-        const candidates = backends.filter(backend => !tried.has(backend.id));
-        if (!candidates.length) break;
+        // Admission is serialised: two concurrent checks must not both pass the
+        // per-second gate before either has recorded a start.
+        const ticket = await admit(() => {
+            const now = Date.now();
+            const candidates = backends.filter(backend => !tried.has(backend.id));
+            if (!candidates.length) return { exhausted: true };
 
-        const ready = candidates.filter(backend => backendWait(backend, scope, now, budget) === 0);
-        for (const backend of ready) {
-            tried.add(backend.id);
-            try {
-                const { data } = await axios.post(`${backend.url}/v0/check_email`, body, {
-                    timeout: timeoutMs,
-                    headers: headersFor(backend),
-                });
-                recordStart(backend, scope, Date.now());
-                recordSuccess(backend);
-                return { data, backend };
-            } catch (error) {
-                const message = describeError(error);
-                attempts.push(`${backend.name}: ${message}`);
-                recordFailure(backend, message);
-                liveHealth.set(backend.id, {
-                    ok: false,
-                    version: '',
-                    latencyMs: 0,
-                    checkedAt: Date.now(),
-                    error: message,
-                });
+            const ready = candidates.filter(backend => backendWait(backend, scope, now, settings) === 0);
+            if (!ready.length) {
+                const soonest = Math.min(...candidates.map(backend => backendWait(backend, scope, now, settings)));
+                return { wait: soonest };
             }
+
+            const backend = ready[0];
+            tried.add(backend.id);
+            recordStart(backend, scope, now, settings);
+            return { backend };
+        });
+
+        if (ticket.exhausted) break;
+        if (ticket.wait !== undefined) {
+            if (ticket.wait <= 0) continue;
+            if (Date.now() + ticket.wait > deadline) {
+                throw new Error('All Reacher backends are at their configured limits for ' + scope);
+            }
+            await sleep(Math.min(Math.max(ticket.wait, 50), 1000));
+            continue;
         }
 
-        const pending = backends.filter(backend => !tried.has(backend.id));
-        if (!pending.length) break;
-
-        const soonest = Math.min(...pending.map(backend => backendWait(backend, scope, Date.now(), budget)));
-        if (soonest <= 0) continue;
-        if (Date.now() + soonest > deadline) {
-            throw new Error(`All Reacher backends are at their configured limits for ${scope}`);
+        const backend = ticket.backend;
+        try {
+            const { data } = await axios.post(backend.url + '/v0/check_email', body, {
+                timeout: timeoutMs,
+                headers: headersFor(backend),
+            });
+            recordSuccess(backend);
+            return { data, backend };
+        } catch (error) {
+            const message = describeError(error);
+            attempts.push(backend.name + ': ' + message);
+            recordFailure(backend, message);
+            liveHealth.set(backend.id, {
+                ok: false,
+                version: '',
+                latencyMs: 0,
+                checkedAt: Date.now(),
+                error: message,
+            });
         }
-        await sleep(Math.min(Math.max(soonest, 50), 1000));
     }
 
-    const detail = attempts.length ? ` — ${attempts.join('; ')}` : '';
-    throw new Error(`All Reacher backends exhausted or failing${detail}`);
+    const detail = attempts.length ? ' — ' + attempts.join('; ') : '';
+    throw new Error('All Reacher backends exhausted or failing' + detail);
 }
-
 module.exports = {
     loadBackends,
     invalidateCache,
@@ -369,5 +419,5 @@ module.exports = {
     normalizeUrl,
     getBackendUsage,
     getAllUsage,
-    budgetFrom,
+    effectiveLimits,
 };

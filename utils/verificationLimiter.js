@@ -10,6 +10,7 @@ const DEFAULTS = {
     providerPerSecond: { gmail: 1, yahoo: 1, microsoft: 1, other: 1 },
     providerPerMinute: { gmail: 30, yahoo: 30, microsoft: 30, other: 30 },
     providerPerDay: { gmail: 1000, yahoo: 1000, microsoft: 1000, other: 1000 },
+    skippedProviders: [],
 };
 
 const queue = [];
@@ -79,6 +80,7 @@ async function readSettings() {
                 providerPerSecond: { ...DEFAULTS.providerPerSecond, ...(saved.providerPerSecond || {}) },
                 providerPerMinute: { ...DEFAULTS.providerPerMinute, ...(saved.providerPerMinute || {}) },
                 providerPerDay: { ...DEFAULTS.providerPerDay, ...(saved.providerPerDay || {}) },
+                skippedProviders: Array.isArray(saved.skippedProviders) ? saved.skippedProviders : [],
             };
         }
     } catch (error) {
@@ -170,22 +172,44 @@ function commitStart(scope, now) {
     state.dayCount += 1;
 }
 
-function limitsFor(settings, provider) {
+function providerLimits(settings, provider) {
+    // Only provider gates live here. The global row is enforced per backend by
+    // the Reacher pool (each backend may override it), so applying it here too
+    // would double-count it.
     return {
-        // Global row: the per-second rate is the one shared ceiling for every
-        // Reacher. Its per-minute/per-day numbers are consumed by the pool as
-        // EACH backend's own budget, so they are not applied here as a total.
-        global: {
-            perSecond: settings.globalPerSecond,
-            perMinute: 0,
-            perDay: 0,
-        },
-        [provider]: {
-            perSecond: settings.providerPerSecond?.[provider],
-            perMinute: settings.providerPerMinute?.[provider],
-            perDay: settings.providerPerDay?.[provider],
-        },
+        perSecond: settings.providerPerSecond?.[provider],
+        perMinute: settings.providerPerMinute?.[provider],
+        perDay: settings.providerPerDay?.[provider],
     };
+}
+
+// Providers are served round-robin so a long run of one provider never starves
+// the others. rotation defines the order; lastProvider remembers where we are.
+const ROTATION = ['gmail', 'microsoft', 'other', 'yahoo'];
+let lastProvider = null;
+
+function isPaused(provider, now) {
+    return (providerHealth.get(provider)?.pausedUntil || 0) > now;
+}
+
+function orderedProviders(now) {
+    const active = ROTATION.filter(p => queue.some(i => i.provider === p) && !isPaused(p, now));
+    if (!active.length) return [];
+    const start = lastProvider ? (ROTATION.indexOf(lastProvider) + 1) % ROTATION.length : 0;
+    const ordered = [];
+    for (let i = 0; i < ROTATION.length; i++) {
+        const p = ROTATION[(start + i) % ROTATION.length];
+        if (active.includes(p)) ordered.push(p);
+    }
+    return ordered;
+}
+
+function earliestPauseWait(now) {
+    const waits = queue.map(item => {
+        const until = providerHealth.get(item.provider)?.pausedUntil || 0;
+        return until > now ? until - now : 1000;
+    });
+    return Math.max(50, Math.min(...waits));
 }
 
 function schedulePump(delay) {
@@ -204,41 +228,35 @@ async function pump() {
             if (active >= settings.maxConcurrent) break;
 
             const now = Date.now();
-            // Any queued item whose provider is not paused is a candidate. The
-            // first one with room wins, so one provider sitting at its per-minute
-            // cap never blocks checks for the other providers behind it.
-            const candidates = queue
-                .map((item, index) => ({ item, index }))
-                .filter(({ item }) => (providerHealth.get(item.provider)?.pausedUntil || 0) <= now);
-
-            if (!candidates.length) {
-                const earliest = Math.min(...queue.map(item => providerHealth.get(item.provider)?.pausedUntil || now + 1000));
-                nextDelay = Math.max(50, earliest - now);
+            // Round-robin across the providers that have queued work and are not
+            // paused. First provider with room wins, so a long Gmail run can
+            // never block Outlook/Other behind it.
+            const providers = orderedProviders(now);
+            if (!providers.length) {
+                nextDelay = earliestPauseWait(now);
                 break;
             }
 
-            let chosen = null;
+            let chosenProvider = null;
             let soonestWait = Infinity;
-            for (const candidate of candidates) {
-                const limits = limitsFor(settings, candidate.item.provider);
-                const wait = Math.max(
-                    scopeWait('global', limits.global, now),
-                    scopeWait(candidate.item.provider, limits[candidate.item.provider], now),
-                );
-                if (wait === 0) { chosen = candidate; break; }
+            for (const candidate of providers) {
+                const wait = scopeWait(candidate, providerLimits(settings, candidate), now);
+                if (wait === 0) { chosenProvider = candidate; break; }
                 soonestWait = Math.min(soonestWait, wait);
             }
 
-            if (!chosen) {
+            if (!chosenProvider) {
                 nextDelay = Number.isFinite(soonestWait) ? soonestWait : 1000;
                 break;
             }
 
-            const { item } = chosen;
-            queue.splice(chosen.index, 1);
+            const index = queue.findIndex(entry => entry.provider === chosenProvider);
+            if (index < 0) continue;
+            const item = queue[index];
+            queue.splice(index, 1);
+            lastProvider = chosenProvider;
             active += 1;
-            commitStart('global', now);
-            commitStart(item.provider, now);
+            commitStart(chosenProvider, now);
 
             Promise.resolve()
                 .then(item.task)

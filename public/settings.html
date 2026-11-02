@@ -75,7 +75,7 @@
                     <div class="table-wrap">
                         <table class="table">
                             <thead>
-                                <tr><th>Backend</th><th>Status</th><th>Used today</th><th class="right">Actions</th></tr>
+                                <tr><th>Backend</th><th>Status</th><th>Used today</th><th>Limits /sec · /min · /day</th><th class="right">Actions</th></tr>
                             </thead>
                             <tbody id="reacherRows"></tbody>
                         </table>
@@ -159,6 +159,15 @@
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+
+                        <h4 class="label mt-4 mb-2">Skip these providers</h4>
+                        <p class="small text-muted mb-2">Skipped addresses are not sent to any Reacher — they come back instantly as “unknown”. Useful when the engine cannot verify a provider at all.</p>
+                        <div class="btn-row mb-2" id="skipProviders">
+                            <label class="notice" style="padding:8px 10px;gap:8px"><input type="checkbox" class="form-check-input" id="skipGmail"> Gmail</label>
+                            <label class="notice" style="padding:8px 10px;gap:8px"><input type="checkbox" class="form-check-input" id="skipYahoo"> Yahoo</label>
+                            <label class="notice" style="padding:8px 10px;gap:8px"><input type="checkbox" class="form-check-input" id="skipMicrosoft"> Microsoft</label>
+                            <label class="notice" style="padding:8px 10px;gap:8px"><input type="checkbox" class="form-check-input" id="skipOther"> Other</label>
                         </div>
 
                         <div class="btn-row mt-4">

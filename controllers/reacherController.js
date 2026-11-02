@@ -18,9 +18,30 @@ function validateUrl(raw) {
     return { url };
 }
 
+// Per-backend limits. Empty/null means "follow the global row". Setting any
+// value makes this backend ignore the global row entirely.
+function normalizeOwnLimits(input) {
+    if (input === null || input === undefined) return { value: undefined };
+    const ranges = { perSecond: [0, 50], perMinute: [0, 1000], perDay: [0, 200000] };
+    const value = {};
+    for (const key of Object.keys(ranges)) {
+        if (!(key in input)) continue;
+        const raw = input[key];
+        if (raw === null || raw === '') { value[key] = null; continue; }
+        const number = Number(raw);
+        const range = ranges[key];
+        if (!Number.isInteger(number) || number < range[0] || number > range[1]) {
+            return { error: `${key} must be a whole number ${range[0]}–${range[1]}, or empty to follow global` };
+        }
+        value[key] = number;
+    }
+    return { value };
+}
+
 // Secrets never leave the server. The UI only learns whether one is stored.
 function serialize(doc, health) {
     const lastStatus = doc.lastStatus || {};
+    const own = doc.limits || {};
     return {
         id: String(doc._id),
         name: doc.name,
@@ -28,6 +49,12 @@ function serialize(doc, health) {
         enabled: doc.enabled !== false,
         locked: doc.locked === true,
         order: doc.order || 0,
+        limits: {
+            perSecond: own.perSecond ?? null,
+            perMinute: own.perMinute ?? null,
+            perDay: own.perDay ?? null,
+        },
+        limitsOverridden: [own.perSecond, own.perMinute, own.perDay].some(v => v !== null && v !== undefined),
         usage: pool.getBackendUsage(String(doc._id)),
         hasSecret: Boolean(doc.secretEnc),
         secretStatus: !doc.secretEnc ? 'missing' : (canDecrypt(doc.secretEnc) ? 'ok' : 'unreadable'),
@@ -72,12 +99,15 @@ const listBackends = async (req, res) => {
 };
 
 const createBackend = async (req, res) => {
-    const { name, url, secret, enabled = true, locked = false, order = 0 } = req.body || {};
+    const { name, url, secret, enabled = true, locked = false, order = 0, limits } = req.body || {};
     const trimmedName = String(name || '').trim();
     if (!trimmedName) return res.status(400).json({ message: 'Give this backend a name, for example "Reacher EU"' });
 
     const check = validateUrl(url);
     if (check.error) return res.status(400).json({ message: check.error });
+
+    const ownLimits = normalizeOwnLimits(limits);
+    if (ownLimits.error) return res.status(400).json({ message: ownLimits.error });
 
     try {
         const total = await ReacherBackend.countDocuments();
@@ -92,6 +122,7 @@ const createBackend = async (req, res) => {
             enabled: enabled !== false,
             locked: locked === true,
             order: Number(order) || 0,
+            ...(ownLimits.value ? { limits: ownLimits.value } : {}),
         });
         pool.invalidateCache();
 
@@ -109,7 +140,7 @@ const createBackend = async (req, res) => {
 };
 
 const updateBackend = async (req, res) => {
-    const { name, url, secret, enabled, locked, order, clearSecret } = req.body || {};
+    const { name, url, secret, enabled, locked, order, clearSecret, limits, resetLimits } = req.body || {};
     try {
         const doc = await ReacherBackend.findById(req.params.id).select('+secretEnc');
         if (!doc) return res.status(404).json({ message: 'Backend not found' });
@@ -133,6 +164,13 @@ const updateBackend = async (req, res) => {
         if (enabled !== undefined) doc.enabled = enabled !== false;
         if (locked !== undefined) doc.locked = locked === true;
         if (order !== undefined) doc.order = Number(order) || 0;
+        if (resetLimits === true) {
+            doc.limits = { perSecond: null, perMinute: null, perDay: null };
+        } else if (limits !== undefined) {
+            const ownLimits = normalizeOwnLimits(limits);
+            if (ownLimits.error) return res.status(400).json({ message: ownLimits.error });
+            doc.limits = { ...(doc.limits || {}), ...ownLimits.value };
+        }
 
         await doc.save();
         pool.invalidateCache();
