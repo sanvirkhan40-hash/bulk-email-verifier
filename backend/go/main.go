@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -86,7 +87,10 @@ func buildConfiguration() (*truemail.Configuration, error) {
 		ConnectionAttempts:    2,
 		SmtpPort:              port,
 		SmtpFailFast:          true,
-		SmtpSafeCheck:         true,
+		// Must stay false: truemail treats "SMTP could not run and it was not a
+		// 550" as success when this is true, which marks every unverifiable
+		// address as valid. Verified in lib/truemail-go/smtp.go.
+		SmtpSafeCheck: false,
 	})
 }
 
@@ -111,6 +115,35 @@ func isConnectionError(msg string) bool {
 		strings.Contains(lower, "refused") ||
 		strings.Contains(lower, "network") ||
 		strings.Contains(lower, "i/o")
+}
+
+// Policy/transport rejections say nothing about whether the mailbox exists:
+// a blacklisted IP, missing forward-confirmed rDNS, greylisting or a 4xx reply
+// only means the server would not talk to us. Treating those as "invalid"
+// produces false negatives, so they map to no_smtp (unknown) instead.
+var inconclusiveSmtpPatterns = []string{
+	"spamhaus", "blacklist", "blocked", "reverse dns", "fcrdns", "ptr record",
+	"greylist", "rate limit", "too many", "service unavailable", "try again",
+	"temporar", "policy", "access denied", "not permitted", "authentication",
+	"insufficient permission", "no permission",
+}
+
+var smtpTemp4xxPattern = regexp.MustCompile(`\b4[0-9]{2}\b`)
+
+func isInconclusiveSmtpResponse(msg string) bool {
+	if msg == "" {
+		return false
+	}
+	lower := strings.ToLower(msg)
+	if smtpTemp4xxPattern.MatchString(lower) || strings.Contains(lower, "5.7.") {
+		return true
+	}
+	for _, pattern := range inconclusiveSmtpPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 func extractSmtpErrors(result *truemail.ValidatorResult) (host, response string, rcptAttempted bool) {
@@ -212,7 +245,10 @@ func verifyEmailAddress(email string) (*verifyResponse, error) {
 	smtpRan := len(result.SmtpDebug) > 0
 	mailboxVerified := "no_smtp"
 
-	if result.Success {
+	// A mailbox is only "yes" when an SMTP dialog actually ran. truemail can
+	// report Success without attempting SMTP at all, and trusting that marked
+	// unverifiable addresses (Yahoo, blacklisted IPs) as valid.
+	if result.Success && smtpRan {
 		mailboxVerified = "yes"
 		if smtpHost != "" {
 			checks = append(checks, checkItem{
@@ -221,6 +257,14 @@ func verifyEmailAddress(email string) (*verifyResponse, error) {
 				Detail:  "250 OK",
 			})
 		}
+	} else if result.Success && !smtpRan {
+		mailboxVerified = "no_smtp"
+		checks = append(checks, checkItem{
+			Step:    "smtp",
+			Passed:  false,
+			Message: "SMTP check did not run",
+			Detail:  "Mailbox not confirmed — no SMTP dialog was attempted",
+		})
 	} else if smtpRan {
 		for _, req := range result.SmtpDebug {
 			host := req.Host
@@ -254,11 +298,10 @@ func verifyEmailAddress(email string) (*verifyResponse, error) {
 			}
 		}
 
-		if rcptAttempted && smtpResponse != "" && !isConnectionError(smtpResponse) {
-			mailboxVerified = "no"
-		} else if rcptAttempted && strings.Contains(strings.ToLower(smtpResponse), "550") {
-			mailboxVerified = "no"
-		} else if _, smtpErr := result.Errors["smtp"]; smtpErr && rcptAttempted {
+		// Conclusive only when the server actually rejected the recipient for a
+		// non-policy reason (550 5.1.1 / user unknown). Policy and transport
+		// rejections stay "unknown" rather than being called invalid.
+		if rcptAttempted && smtpResponse != "" && !isConnectionError(smtpResponse) && !isInconclusiveSmtpResponse(smtpResponse) {
 			mailboxVerified = "no"
 		}
 	}
