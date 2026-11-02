@@ -72,3 +72,30 @@ Then verify one Outlook address in the app. A good result shows
 Bump `REACHER_VERSION` to a newer release tag. The patch step fails the build if
 upstream changes those lines, which is what you want: check
 `core/src/smtp/headless.rs` and adjust the `sed` expression.
+
+## Yahoo: not verifiable with this stack (2026-11)
+
+Both Yahoo methods are dead ends, and neither is a config problem:
+
+| Method | Result | Why |
+|---|---|---|
+| `headless` (default) | `HeadlessError: disconnected` | upstream bug #1598 (stale page selectors) |
+| `smtp` | false positives | Yahoo answers `is_deliverable: true` for fabricated addresses |
+| `api` | `YahooError` | see below |
+
+The `sessionIndex` patch above gets past the first failure (`NoSessionIndex`).
+The next stage then fails because Yahoo retired the endpoint Reacher posts to:
+
+```
+POST https://login.yahoo.com/account/module/create?validateField=yid
+-> 404, content-type: text/html   (a Next.js page, not JSON)
+```
+
+Verified by replaying the full flow with live cookies, a real `sessionIndex`
+and acrumb. Re-implementing the current Next.js username-check (new route,
+CSRF/session handling) is a project, not a patch, and would break again.
+Therefore Yahoo addresses resolve to `no_smtp` (unknown) by design.
+
+Do not switch Yahoo to `smtp` to "fix" it: that reports dead mailboxes as
+valid. Keep `RCH__OVERRIDES__YAHOO__TYPE=api` if you want the cheap fast-fail
+(0.7s, no browser) instead of a 6s browser attempt.
