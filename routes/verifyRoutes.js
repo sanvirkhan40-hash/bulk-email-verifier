@@ -12,7 +12,7 @@ const { protect } = require('../middlewares/authMiddleware');
 const upload = multer({ dest: 'uploads/' });
 
 router.get('/health', protect, getEngineHealth);
-router.get('/engine-status', getEngineHealth);
+router.get('/engine-status', protect, getEngineHealth);
 router.post('/single', protect, verifySingleEmail);
 router.post('/bulk', protect, verifyBulkEmails);
 router.post('/upload-bulk', protect, upload.single('file'), uploadBulkFile);
