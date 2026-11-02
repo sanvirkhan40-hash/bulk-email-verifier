@@ -62,7 +62,7 @@
 
                 <div class="glass-card p-4 mb-4" id="verificationSpeedCard" style="display:none;">
                     <h5 class="mb-2 fw-bold"><i class="fa-solid fa-gauge-high me-2 gradient-text"></i>Rate limits</h5>
-                    <p class="small text-muted">Per second is one shared rate for everything. Per minute and per day also cap each provider. Reach a limit and queued checks wait instead of hammering the provider.</p>
+                    <p class="small text-muted"><strong>Global row:</strong> per second is one shared speed for everything; per minute and per day are <em>each Reacher's own budget</em> — reach the minute cap and checks move to the next Reacher, reach the daily cap and that Reacher rests until tomorrow (UTC). <strong>Provider rows</strong> cap that provider across all Reachers. 0 means no limit.</p>
 
                     <div class="mb-3">
                         <label class="form-label">Max concurrent checks</label>
@@ -118,6 +118,7 @@
                     <p class="small text-muted mt-2 mb-2" id="verificationSpeedStatus">Admin-only settings. Changes apply to queued checks.</p>
                     <div class="small" id="providerBackoffStatus" aria-live="polite"></div>
                     <div class="small text-muted mt-1" id="limiterUsage" aria-live="polite"></div>
+                    <div class="small text-muted mt-1" id="engineUsage" aria-live="polite"></div>
                 </div>
 
                 <div class="glass-card p-4">
@@ -145,12 +146,11 @@
                                     <th>Backend</th>
                                     <th>Status</th>
                                     <th>Used today</th>
-                                    <th>Limits /min · /day</th>
                                     <th class="text-end">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="reacherRows">
-                                <tr><td colspan="5" class="text-muted small">Loading…</td></tr>
+                                <tr><td colspan="4" class="text-muted small">Loading…</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -161,12 +161,10 @@
                         <div class="col-sm-6"><input id="newName" class="form-control form-control-sm" placeholder="Name, e.g. Reacher EU"></div>
                         <div class="col-sm-6"><input id="newUrl" class="form-control form-control-sm" placeholder="https://reacher.example.com"></div>
                         <div class="col-sm-6"><input id="newSecret" type="password" class="form-control form-control-sm" placeholder="Shared secret (optional)"></div>
-                        <div class="col-6 col-sm-3"><input id="newPerMinute" type="number" min="0" max="600" value="60" class="form-control form-control-sm" title="Checks per minute for this backend"></div>
-                        <div class="col-6 col-sm-3"><input id="newPerDay" type="number" min="0" max="100000" value="2000" class="form-control form-control-sm" title="Checks per day for this backend"></div>
                     </div>
                     <div class="d-flex flex-wrap gap-2 mt-2 align-items-center">
                         <button id="addBackendBtn" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus me-1"></i>Add backend</button>
-                        <small class="text-muted">Per minute and per day belong to each Reacher. Per second is the shared global rate above.</small>
+                        <small class="text-muted">Limits are not set per backend — every Reacher follows the Rate limits above.</small>
                     </div>
                     <p class="small text-muted mt-2 mb-0" id="reacherNote"></p>
                 </div>
@@ -292,6 +290,7 @@
                 });
                 renderProviderBackoff(data.providerBackoff || {});
                 renderLimiterUsage(data.usage || {});
+                renderEngineUsage(data.engineUsage);
             } catch (error) {
                 if (error.response?.status === 403) card.style.display = 'none';
                 else document.getElementById('verificationSpeedStatus').textContent = 'Could not load settings. Check your database connection.';
@@ -316,6 +315,17 @@
             if (global.active !== undefined) bits.push(`${global.active} running`);
             if (global.queued) bits.push(`${global.queued} queued`);
             el.textContent = bits.join(' · ');
+        }
+
+        // Totals per engine, including the truemail-go fallback.
+        function renderEngineUsage(usage) {
+            const el = document.getElementById('engineUsage');
+            if (!usage) { el.textContent = ''; return; }
+            const byProvider = PROVIDERS
+                .map(p => `${PROVIDER_LABELS[p]} ${usage.goByProvider?.[p] ?? 0}`)
+                .join(' · ');
+            el.innerHTML = `<strong>Today:</strong> Reacher ${usage.reacher ?? 0} · truemail-go ${usage.go ?? 0}`
+                + `<div class="small">truemail-go by provider: ${byProvider}</div>`;
         }
 
         document.getElementById('saveVerificationSpeed').addEventListener('click', async () => {
@@ -368,16 +378,12 @@
         function usageCell(b) {
             const usage = b.usage || {};
             const used = usage.today ?? 0;
-            const limit = b.limits?.perDay ?? 0;
-            const limitLabel = limit > 0 ? limit : '∞';
-            const exhausted = limit > 0 && used >= limit;
             const perProvider = PROVIDERS
                 .map(p => `${PROVIDER_LABELS[p]} ${usage.byProvider?.[p]?.today ?? 0}`)
                 .join(' · ');
             return `
-                <div class="${exhausted ? 'text-danger fw-medium' : 'fw-medium'}">${used} / ${limitLabel}</div>
+                <div class="fw-medium">${used}</div>
                 <div class="small text-muted">${perProvider}</div>
-                ${exhausted ? '<div class="small text-danger">Limit reached — unused until tomorrow (UTC)</div>' : ''}
             `;
         }
 
@@ -394,18 +400,11 @@
                     <tr data-id="${b.id}">
                         <td>
                             <div class="fw-medium">${b.name}</div>
-                            <div class="small text-muted">${b.url}</div>
+                            <div class="small text-muted backend-url">${b.url}</div>
                             <div class="small text-muted">${b.hasSecret ? (b.secretStatus === 'ok' ? 'secret saved' : 'secret unreadable — re-enter') : 'no secret'}</div>
                         </td>
                         <td>${statusCell(b)}</td>
                         <td>${usageCell(b)}</td>
-                        <td>
-                            <div class="d-flex align-items-center gap-1">
-                                <input class="form-control form-control-sm" style="width:70px" type="number" min="0" max="600" value="${b.limits?.perMinute ?? 60}" data-role="perMinute" title="Per minute">
-                                <input class="form-control form-control-sm" style="width:84px" type="number" min="0" max="100000" value="${b.limits?.perDay ?? 2000}" data-role="perDay" title="Per day">
-                                <button class="btn btn-sm btn-outline-secondary" data-action="save-limits" title="Save limits"><i class="fa-solid fa-check"></i></button>
-                            </div>
-                        </td>
                         <td class="text-end">
                             <button class="btn btn-sm ${b.locked ? 'btn-warning' : 'btn-outline-secondary'}" data-action="lock" title="${b.locked ? 'Unlock backend' : 'Lock backend (do not use)'}">
                                 <i class="fa-solid ${b.locked ? 'fa-lock' : 'fa-lock-open'}"></i>
@@ -420,7 +419,7 @@
             const active = backends.filter(b => b.enabled && !b.locked).length;
             const healthy = backends.filter(b => (b.health || b.lastStatus || {}).ok && !b.locked).length;
             summary.textContent = backends.length
-                ? `${active} usable · ${healthy} online · checks rotate between usable backends and switch automatically when one hits its per-minute or per-day limit`
+                ? `${active} usable · ${healthy} online · each Reacher follows the Rate limits above: hit the per-minute cap and checks move to the next one, hit the daily cap and it is skipped until tomorrow (UTC)`
                 : '';
             note.textContent = data.usingEnvironmentFallback
                 ? `Using REACHER_URL from the environment (${data.environmentFallbackUrl}) because no backend is saved here. Add one above to manage it from the UI.`
@@ -490,15 +489,7 @@
             }
 
             if (action === 'save-limits') {
-                const perMinute = Number(row.querySelector('[data-role="perMinute"]').value);
-                const perDay = Number(row.querySelector('[data-role="perDay"]').value);
-                try {
-                    await axios.put(`/api/reacher-backends/${id}`, { limits: { perMinute, perDay } });
-                    showToast('Limits saved');
-                    await loadBackends();
-                } catch (error) {
-                    showToast(error.response?.data?.message || 'Could not save limits', 'error');
-                }
+                return;
             }
         });
 
@@ -506,14 +497,12 @@
             const name = document.getElementById('newName').value.trim();
             const url = document.getElementById('newUrl').value.trim();
             const secret = document.getElementById('newSecret').value;
-            const perMinute = Number(document.getElementById('newPerMinute').value);
-            const perDay = Number(document.getElementById('newPerDay').value);
             if (!name || !url) {
                 showToast('Name and URL are required', 'error');
                 return;
             }
             try {
-                await axios.post('/api/reacher-backends', { name, url, secret, limits: { perMinute, perDay } });
+                await axios.post('/api/reacher-backends', { name, url, secret });
                 showToast('Backend added');
                 ['newName', 'newUrl', 'newSecret'].forEach(id => { document.getElementById(id).value = ''; });
                 await loadBackends();

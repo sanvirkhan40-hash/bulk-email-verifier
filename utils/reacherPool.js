@@ -1,7 +1,7 @@
 const axios = require('axios');
 const ReacherBackend = require('../models/ReacherBackend');
 const { decryptSecret, canDecrypt } = require('./secretBox');
-const { providerFor } = require('./verificationLimiter');
+const { providerFor, readSettings } = require('./verificationLimiter');
 
 const CACHE_MS = 15000;
 const PROBE_TIMEOUT_MS = 4000;
@@ -60,27 +60,29 @@ function num(value, fallback) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function limitsOf(backend) {
-    if (backend.legacy) return { perMinute: 0, perDay: 0 };
-    const limits = backend.limits || {};
+// Per-backend budget comes from the single Rate limits section, not from the
+// backend record: the global row is what each Reacher may do per minute and per
+// day. Reaching the minute cap rotates to the next backend; reaching the daily
+// cap retires that backend until the next UTC day.
+function budgetFrom(settings) {
     return {
-        perMinute: Math.max(0, num(limits.perMinute, 60)),
-        perDay: Math.max(0, num(limits.perDay, 2000)),
+        perMinute: Math.max(0, num(settings?.globalPerMinute, 60)),
+        perDay: Math.max(0, num(settings?.globalPerDay, 5000)),
     };
 }
 
 // Milliseconds until this window may accept another start. There is no per-second
 // gate per backend: that rate is enforced globally by verificationLimiter.
-function windowWait(state, limits, now) {
+function windowWait(state, budget, now) {
     rollDay(state);
     pruneMinute(state, now);
 
     let wait = 0;
-    if (limits.perMinute > 0 && state.minStarts.length >= limits.perMinute) {
-        const oldest = state.minStarts[state.minStarts.length - limits.perMinute];
+    if (budget.perMinute > 0 && state.minStarts.length >= budget.perMinute) {
+        const oldest = state.minStarts[state.minStarts.length - budget.perMinute];
         wait = Math.max(wait, oldest + 60000 - now);
     }
-    if (limits.perDay > 0 && state.dayCount >= limits.perDay) {
+    if (budget.perDay > 0 && state.dayCount >= budget.perDay) {
         wait = Math.max(wait, msUntilNextUtcDay(now));
     }
     return Math.max(0, wait);
@@ -96,12 +98,11 @@ function commitStart(state, now) {
 
 // A backend is usable for this provider only when BOTH its overall window and
 // that provider's window have room.
-function backendWait(backend, provider, now) {
-    const limits = limitsOf(backend);
+function backendWait(backend, provider, now, budget) {
     const entry = usageEntry(backend.id);
     return Math.max(
-        windowWait(entry.global, limits, now),
-        windowWait(entry.providers[provider] || (entry.providers[provider] = newWindow()), limits, now)
+        windowWait(entry.global, budget, now),
+        windowWait(entry.providers[provider] || (entry.providers[provider] = newWindow()), budget, now)
     );
 }
 
@@ -160,7 +161,6 @@ function legacyBackend() {
         enabled: true,
         locked: false,
         order: 9999,
-        limits: { perMinute: 0, perDay: 0 },
         legacy: true,
     };
 }
@@ -183,10 +183,6 @@ async function loadBackends({ force = false } = {}) {
             secretUnreadable: Boolean(doc.secretEnc) && !canDecrypt(doc.secretEnc),
             enabled: doc.enabled !== false,
             locked: doc.locked === true,
-            limits: {
-                perMinute: num(doc.limits?.perMinute, 60),
-                perDay: num(doc.limits?.perDay, 2000),
-            },
             order: doc.order || 0,
             legacy: false,
         })).filter(item => item.url);
@@ -309,6 +305,8 @@ async function verifyWithPool(body, { timeoutMs, provider } = {}) {
         throw new Error('No Reacher backend available. Add one in Settings or unlock a backend.');
     }
 
+    // Budget for every backend comes from the Rate limits section.
+    const budget = budgetFrom(await readSettings());
     const maxWait = num(process.env.REACHER_POOL_MAX_WAIT_MS, DEFAULT_MAX_WAIT_MS);
     const deadline = Date.now() + maxWait;
     const attempts = [];
@@ -321,7 +319,7 @@ async function verifyWithPool(body, { timeoutMs, provider } = {}) {
         const candidates = backends.filter(backend => !tried.has(backend.id));
         if (!candidates.length) break;
 
-        const ready = candidates.filter(backend => backendWait(backend, scope, now) === 0);
+        const ready = candidates.filter(backend => backendWait(backend, scope, now, budget) === 0);
         for (const backend of ready) {
             tried.add(backend.id);
             try {
@@ -349,7 +347,7 @@ async function verifyWithPool(body, { timeoutMs, provider } = {}) {
         const pending = backends.filter(backend => !tried.has(backend.id));
         if (!pending.length) break;
 
-        const soonest = Math.min(...pending.map(backend => backendWait(backend, scope, Date.now())));
+        const soonest = Math.min(...pending.map(backend => backendWait(backend, scope, Date.now(), budget)));
         if (soonest <= 0) continue;
         if (Date.now() + soonest > deadline) {
             throw new Error(`All Reacher backends are at their configured limits for ${scope}`);
@@ -371,5 +369,5 @@ module.exports = {
     normalizeUrl,
     getBackendUsage,
     getAllUsage,
-    limitsOf,
+    budgetFrom,
 };

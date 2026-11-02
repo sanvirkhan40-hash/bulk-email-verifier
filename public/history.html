@@ -96,12 +96,13 @@
                         <tr>
                             <th>Email</th>
                             <th>Status</th>
+                            <th>Checked by</th>
                             <th>Source</th>
                             <th>Date</th>
                         </tr>
                     </thead>
                     <tbody id="historyBody">
-                        <tr><td colspan="4" class="text-center">Loading history...</td></tr>
+                        <tr><td colspan="5" class="text-center">Loading history...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -131,6 +132,15 @@
             const s = String(record.status || '').toLowerCase();
             if (s === 'valid' || s === 'ok') return true;
             return record.details?.report?.valid === true;
+        }
+
+        // Which engine/backend produced this record (stored on the saved report).
+        function checkedBy(record) {
+            const report = record.details && record.details.report ? record.details.report : {};
+            const backend = report.engine_backend || '';
+            if (report.fallback_from) return 'truemail-go (fallback)';
+            if (backend && backend !== 'truemail-go') return backend;
+            return backend === 'truemail-go' ? 'truemail-go' : (report.engine === 'reacher' ? 'Reacher' : '—');
         }
 
         function statusBadgeClass(record) {
@@ -343,8 +353,9 @@
             paginated.forEach(record => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td class="fw-medium">${record.email}</td>
+                    <td class="fw-medium text-break">${record.email}</td>
                     <td><span class="badge ${statusBadgeClass(record)}">${statusLabel(record)}</span></td>
+                    <td class="small text-muted text-nowrap">${checkedBy(record)}</td>
                     <td><span class="badge bg-light text-dark border">${record.source.toUpperCase()}</span></td>
                     <td class="text-muted small">${new Date(record.timestamp).toLocaleString()}</td>
                 `;

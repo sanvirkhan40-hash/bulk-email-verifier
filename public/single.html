@@ -92,6 +92,7 @@
                                 <span id="validBadge" class="badge fs-6 px-3 py-2"></span>
                                 <span id="domainBadge" class="badge fs-6 px-3 py-2"></span>
                                 <span id="mailboxBadge" class="badge fs-6 px-3 py-2"></span>
+                                <span id="engineBadge" class="badge fs-6 px-3 py-2 bg-light text-dark border"></span>
                             </div>
                         </div>
                         <button id="copyResultBtn" class="btn btn-outline-primary btn-sm">
@@ -180,6 +181,7 @@
                 if (c.detail) lines.push('  ' + c.detail);
             });
             if (data.smtp_response) lines.push('', 'Server Response: ' + data.smtp_response);
+            if (data.engine) lines.push('', 'Checked by: ' + (data.engine === 'reacher' ? (data.backend || 'Reacher') : 'truemail-go'));
             return lines.join('\n');
         }
 
@@ -198,6 +200,14 @@
             const mbMap = { yes: ['Mailbox: Verified', 'bg-success'], no: ['Mailbox: Not verified', 'bg-danger'], no_smtp: ['Mailbox: SMTP unavailable', 'bg-warning text-dark'] };
             const [mbText, mbCls] = mbMap[data.mailbox_verified] || mbMap.no_smtp;
             badge(document.getElementById('mailboxBadge'), mbText, mbCls);
+
+            // Which engine actually served this check.
+            const usedReacher = data.engine === 'reacher';
+            const fallback = Boolean(data.report && data.report.fallback_from);
+            const engineLabel = usedReacher
+                ? `Checked by ${data.backend || 'Reacher'}`
+                : `Checked by truemail-go${fallback ? ' (Reacher failed, fell back)' : ''}`;
+            badge(document.getElementById('engineBadge'), engineLabel, 'bg-light text-dark border');
 
             const smtpBox = document.getElementById('smtpResponseBox');
             if (data.smtp_response) {

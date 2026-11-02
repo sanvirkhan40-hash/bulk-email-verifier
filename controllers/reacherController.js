@@ -18,34 +18,9 @@ function validateUrl(raw) {
     return { url };
 }
 
-// Per-backend budget. Per-second is global (one shared rate for every Reacher);
-// per-minute makes the pool cycle to the next backend, per-day locks it for the
-// rest of the UTC day. 0 disables that window.
-function normalizeLimits(input, fallback = {}) {
-    const source = input || {};
-    const read = (key, min, max, default_) => {
-        const raw = source[key] ?? fallback[key];
-        if (raw === undefined || raw === null || raw === '') return default_;
-        const value = Number(raw);
-        if (!Number.isInteger(value) || value < min || value > max) {
-            return { error: `${key} must be a whole number between ${min} and ${max}` };
-        }
-        return value;
-    };
-    const perMinute = read('perMinute', 0, 600, 60);
-    const perDay = read('perDay', 0, 100000, 2000);
-    const bad = [perMinute, perDay].find(value => typeof value === 'object');
-    if (bad) return bad;
-    return { value: { perMinute, perDay } };
-}
-
 // Secrets never leave the server. The UI only learns whether one is stored.
 function serialize(doc, health) {
     const lastStatus = doc.lastStatus || {};
-    const limits = {
-        perMinute: Number.isFinite(Number(doc.limits?.perMinute)) ? Number(doc.limits.perMinute) : 60,
-        perDay: Number.isFinite(Number(doc.limits?.perDay)) ? Number(doc.limits.perDay) : 2000,
-    };
     return {
         id: String(doc._id),
         name: doc.name,
@@ -53,7 +28,6 @@ function serialize(doc, health) {
         enabled: doc.enabled !== false,
         locked: doc.locked === true,
         order: doc.order || 0,
-        limits,
         usage: pool.getBackendUsage(String(doc._id)),
         hasSecret: Boolean(doc.secretEnc),
         secretStatus: !doc.secretEnc ? 'missing' : (canDecrypt(doc.secretEnc) ? 'ok' : 'unreadable'),
@@ -98,15 +72,12 @@ const listBackends = async (req, res) => {
 };
 
 const createBackend = async (req, res) => {
-    const { name, url, secret, enabled = true, locked = false, order = 0, limits } = req.body || {};
+    const { name, url, secret, enabled = true, locked = false, order = 0 } = req.body || {};
     const trimmedName = String(name || '').trim();
     if (!trimmedName) return res.status(400).json({ message: 'Give this backend a name, for example "Reacher EU"' });
 
     const check = validateUrl(url);
     if (check.error) return res.status(400).json({ message: check.error });
-
-    const normalized = normalizeLimits(limits);
-    if (normalized.error) return res.status(400).json({ message: normalized.error });
 
     try {
         const total = await ReacherBackend.countDocuments();
@@ -121,7 +92,6 @@ const createBackend = async (req, res) => {
             enabled: enabled !== false,
             locked: locked === true,
             order: Number(order) || 0,
-            limits: normalized.value,
         });
         pool.invalidateCache();
 
@@ -139,7 +109,7 @@ const createBackend = async (req, res) => {
 };
 
 const updateBackend = async (req, res) => {
-    const { name, url, secret, enabled, locked, order, clearSecret, limits } = req.body || {};
+    const { name, url, secret, enabled, locked, order, clearSecret } = req.body || {};
     try {
         const doc = await ReacherBackend.findById(req.params.id).select('+secretEnc');
         if (!doc) return res.status(404).json({ message: 'Backend not found' });
@@ -163,11 +133,6 @@ const updateBackend = async (req, res) => {
         if (enabled !== undefined) doc.enabled = enabled !== false;
         if (locked !== undefined) doc.locked = locked === true;
         if (order !== undefined) doc.order = Number(order) || 0;
-        if (limits !== undefined) {
-            const normalized = normalizeLimits(limits, doc.limits || {});
-            if (normalized.error) return res.status(400).json({ message: normalized.error });
-            doc.limits = normalized.value;
-        }
 
         await doc.save();
         pool.invalidateCache();
@@ -205,7 +170,6 @@ const testBackend = async (req, res) => {
             name: doc.name,
             url: pool.normalizeUrl(doc.url),
             secret: decryptSecret(doc.secretEnc),
-            limits: doc.limits || {},
         };
         const health = await pool.probe(target);
         await ReacherBackend.updateOne({ _id: doc._id }, { $set: { lastStatus: health } });

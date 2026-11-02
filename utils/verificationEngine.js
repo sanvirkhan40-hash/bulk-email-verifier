@@ -2,12 +2,53 @@ const axios = require('axios');
 const { mapReacherToReport, checkReacherHealth, REACHER_BASE } = require('./reacherClient');
 const { ensureGoVerifier } = require('./spawnGo');
 const reacherPool = require('./reacherPool');
+const { providerFor } = require('./verificationLimiter');
 
 const GO_BASE = process.env.GO_VERIFIER_URL || 'http://localhost:8080';
 const ENGINE_MODE = (process.env.VERIFIER_ENGINE || 'truemail').toLowerCase();
 const REACHER_TIMEOUT = parseInt(process.env.REACHER_TIMEOUT_MS || '45000', 10);
 
 let cachedEngine = null;
+
+// Per-engine counters for today. The fallback engine (truemail-go) is shown in
+// Settings too, otherwise its usage would be invisible next to the Reachers.
+const ENGINE_PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
+let engineUsage = freshEngineUsage();
+
+function todayKey() {
+    return new Date().toISOString().slice(0, 10);
+}
+
+function freshEngineUsage() {
+    return {
+        dayKey: todayKey(),
+        go: 0,
+        reacher: 0,
+        goByProvider: Object.fromEntries(ENGINE_PROVIDERS.map(p => [p, 0])),
+        reacherByProvider: Object.fromEntries(ENGINE_PROVIDERS.map(p => [p, 0])),
+    };
+}
+
+function rollEngineDay() {
+    if (engineUsage.dayKey !== todayKey()) engineUsage = freshEngineUsage();
+}
+
+function recordEngineUse(engine, email) {
+    rollEngineDay();
+    const provider = providerFor(email);
+    if (engine === 'reacher') {
+        engineUsage.reacher += 1;
+        if (provider in engineUsage.reacherByProvider) engineUsage.reacherByProvider[provider] += 1;
+    } else {
+        engineUsage.go += 1;
+        if (provider in engineUsage.goByProvider) engineUsage.goByProvider[provider] += 1;
+    }
+}
+
+function getEngineUsage() {
+    rollEngineDay();
+    return JSON.parse(JSON.stringify(engineUsage));
+}
 
 async function verifyWithGo(email) {
     const url = `${GO_BASE}/v1/${encodeURIComponent(email)}/verification`;
@@ -144,6 +185,7 @@ async function verifyEmailCombined(email) {
         }
     }
 
+    recordEngineUse(report.engine === 'reacher' ? 'reacher' : 'truemail-go', email);
     return wrapResult(report, email);
 }
 
@@ -209,4 +251,5 @@ module.exports = {
     mapStatus,
     resolveEngine,
     resetEngineCache,
+    getEngineUsage,
 };
