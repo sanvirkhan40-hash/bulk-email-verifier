@@ -13,12 +13,28 @@ those two flags removed by a source patch. Everything else is unchanged.
 
 ## What it contains
 
-1. `alpine/git` — clones the Reacher source at `REACHER_VERSION` and removes the
-   two flags. The build fails loudly if the patch no longer applies.
+1. `alpine/git` — clones the Reacher source at `REACHER_VERSION` and applies two
+   source patches. The build fails loudly if either patch stops applying.
 2. `messense/rust-musl-cross:x86_64-musl` — builds `reacher_backend`, exactly as
    the upstream Dockerfile does.
 3. `zenika/alpine-chrome` + `chromium-chromedriver` — runtime image with Chrome,
    entrypoint still `chromedriver & ./reacher_backend`.
+
+## Patches applied
+
+| File | Change | Fixes |
+|---|---|---|
+| `core/src/smtp/headless.rs` | removes `--single-process --no-zygote` | `HeadlessError: disconnected` on Yahoo/Outlook |
+| `core/src/smtp/yahoo/api.rs` | `patch-yahoo.sed` rewrites the `sessionIndex` extraction | `YahooError: NoSessionIndex` |
+
+Yahoo's signup page no longer renders `<input type="hidden" name="sessionIndex">`.
+It now embeds the same value as JSON in a `<script>` block, e.g.
+`sessionIndex\":\"QQ--\"`. The old regex could never match it, so every Yahoo
+check failed before reaching Yahoo. `patch-yahoo.sed` matches the JSON form; the
+regex was verified against the live page (extracts `QQ--`).
+
+Set `RCH__OVERRIDES__YAHOO__TYPE=api` on the service to use the API method
+(headless is the default and also works for Outlook).
 
 ## Deploying in Coolify
 
