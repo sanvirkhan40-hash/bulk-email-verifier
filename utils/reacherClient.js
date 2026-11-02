@@ -105,7 +105,9 @@ function mapReacherToReport(data, email) {
             passed: deliverable,
             message: deliverable
                 ? 'SMTP mailbox confirmed (Reacher)'
-                : 'SMTP mailbox not confirmed (Reacher)',
+                : (reachable === 'risky'
+                    ? 'SMTP accepted the address but flagged it (Reacher)'
+                    : 'SMTP mailbox not confirmed (Reacher)'),
             detail: deliverable
                 ? '250 OK / is_deliverable'
                 : `is_reachable: ${reachable}`,
@@ -125,6 +127,10 @@ function mapReacherToReport(data, email) {
 
     if (reachable === 'safe' || deliverable) {
         mailboxVerified = 'yes';
+    } else if (reachable === 'risky') {
+        // Reacher accepted the recipient but flagged it (role account,
+        // catch-all, full inbox). The mailbox exists; it is not "invalid".
+        mailboxVerified = 'risky';
     } else if (reachable === 'invalid' && smtpRan) {
         mailboxVerified = 'no';
     } else if (smtpRan && !deliverable) {
@@ -137,6 +143,9 @@ function mapReacherToReport(data, email) {
 
     if (valid) {
         verdictSummary = `${email} seems to be valid`;
+    } else if (mailboxVerified === 'risky') {
+        verdictSummary =
+            `${email} exists but is a risky mailbox (role account or catch-all) — not confirmed for outreach`;
     } else if (mailboxVerified === 'no_smtp' && domainValid) {
         verdictSummary =
             `${email} — domain OK but mailbox could not be verified (SMTP blocked or unknown)`;

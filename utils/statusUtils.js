@@ -7,7 +7,7 @@ function isValidStatus(status, details) {
 
 function isUnknownStatus(status) {
     const s = String(status || '').toLowerCase();
-    return s === 'unknown' || s === 'no_smtp';
+    return s === 'unknown' || s === 'no_smtp' || s === 'risky';
 }
 
 function classifyHistoryRecord(record) {
@@ -20,7 +20,7 @@ function statusBadgeClass(status, details) {
     if (isValidStatus(status, details)) return 'bg-success';
     const s = String(status || '').toLowerCase();
     if (s === 'fail' || s === 'error' || s === 'invalid') return 'bg-danger';
-    if (s === 'disposable' || s === 'catch_all') return 'bg-warning text-dark';
+    if (s === 'disposable' || s === 'catch_all' || s === 'risky') return 'bg-warning text-dark';
     if (isUnknownStatus(s)) return 'bg-secondary';
     return 'bg-danger';
 }

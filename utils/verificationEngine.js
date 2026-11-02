@@ -59,6 +59,7 @@ async function verifyWithGo(email) {
 function mapStatus(report) {
     if (report.valid) return 'valid';
     if (report.misc?.disposable) return 'disposable';
+    if (report.mailbox_verified === 'risky') return 'risky';
     if (report.mailbox_verified === 'no_smtp') return 'no_smtp';
     if (!report.domain_valid) return 'invalid';
     return 'invalid';

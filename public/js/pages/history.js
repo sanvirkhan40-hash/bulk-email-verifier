@@ -24,7 +24,7 @@ let fullHistory = [];
             if (isValidRecord(record)) return 'bg-success';
             const s = String(record.status || '').toLowerCase();
             if (s === 'fail' || s === 'error' || s === 'invalid') return 'bg-danger';
-            if (s === 'disposable' || s === 'catch_all') return 'bg-warning text-dark';
+            if (s === 'disposable' || s === 'catch_all' || s === 'risky') return 'bg-warning text-dark';
             if (s === 'unknown' || s === 'no_smtp') return 'bg-secondary';
             return 'bg-danger';
         }

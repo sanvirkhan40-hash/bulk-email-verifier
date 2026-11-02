@@ -46,6 +46,8 @@ const uploadForm    = document.getElementById('uploadForm');
             document.getElementById('pInvalid').textContent = stats.invalid;
             document.getElementById('pDisposable').textContent = stats.disposable;
             document.getElementById('pNoSmtp').textContent = stats.noSmtp;
+            const riskyEl = document.getElementById('pRisky');
+            if (riskyEl) riskyEl.textContent = stats.risky || 0;
             const pct = total ? Math.round((stats.completed / total) * 100) : 0;
             progressBar.style.width = pct + '%';
             progressText.textContent = `${stats.completed} / ${total}`;
@@ -60,7 +62,7 @@ const uploadForm    = document.getElementById('uploadForm');
         function syncResultsUI(job) {
             const rows = job.fileRows || [];
             results = [];
-            const stats = { valid: 0, invalid: 0, disposable: 0, noSmtp: 0, completed: 0 };
+            const stats = { valid: 0, invalid: 0, disposable: 0, noSmtp: 0, risky: 0, completed: 0 };
             const map = job.verifyMap || {};
 
             rows.forEach(row => {
@@ -83,6 +85,7 @@ const uploadForm    = document.getElementById('uploadForm');
                 if (item.valid) stats.valid++;
                 else if (item.status === 'disposable' || v.misc?.disposable) stats.disposable++;
                 else if (item.mailbox_verified === 'no_smtp') stats.noSmtp++;
+                else if (item.status === 'risky' || item.mailbox_verified === 'risky') stats.risky++;
                 else stats.invalid++;
             });
 
@@ -215,7 +218,7 @@ const uploadForm    = document.getElementById('uploadForm');
         }
 
         function mailboxBadge(val) {
-            const map = { yes: 'bg-success', no: 'bg-danger', no_smtp: 'bg-warning text-dark' };
+            const map = { yes: 'bg-success', no: 'bg-danger', no_smtp: 'bg-warning text-dark', risky: 'bg-warning text-dark' };
             return `<span class="badge ${map[val] || 'bg-secondary'}">${val || '—'}</span>`;
         }
 
@@ -322,7 +325,7 @@ const uploadForm    = document.getElementById('uploadForm');
                     verifyMap: {},
                     nextEmailIndex: 0,
                     results: [],
-                    stats: { valid: 0, invalid: 0, disposable: 0, noSmtp: 0, completed: 0 },
+                    stats: { valid: 0, invalid: 0, disposable: 0, noSmtp: 0, risky: 0, completed: 0 },
                     startedAt: Date.now(),
                     savedToServer: false,
                 };
