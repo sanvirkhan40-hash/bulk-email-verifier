@@ -14,6 +14,22 @@ function isErrorBlock(obj) {
     return obj && typeof obj === 'object' && obj.type === 'error';
 }
 
+// Reacher reports SMTP/browser failures in two shapes: a legacy error block
+// ({type:'error', error:{...}}) and a plain smtp object that carries an error
+// plus a description such as "IpBlacklisted".
+function smtpFailure(smtp) {
+    if (!smtp || typeof smtp !== 'object') return null;
+    if (!smtp.error) return null;
+    const error = typeof smtp.error === 'object'
+        ? smtp.error
+        : { message: String(smtp.error) };
+    return {
+        type: error.type || smtp.description || 'SmtpError',
+        description: smtp.description || '',
+        message: error.message || error.detail || '',
+    };
+}
+
 function mapReacherToReport(data, email) {
     const syntax = data.syntax || {};
     const mx = isErrorBlock(data.mx) ? {} : data.mx || {};
@@ -75,12 +91,12 @@ function mapReacherToReport(data, email) {
 
     // Reacher reports a broken browser/SMTP attempt as an error block. Without
     // this, the result is a silent "no_smtp" and the real reason is lost.
-    const smtpError = isErrorBlock(data.smtp) ? (data.smtp.error || {}) : null;
-    const smtpErrorIsObject = Boolean(smtpError) && typeof smtpError === 'object';
-    const smtpErrorType = smtpErrorIsObject ? (smtpError.type || '') : String(smtpError || '');
-    const smtpErrorMessage = smtpErrorIsObject ? (smtpError.message || smtpError.detail || '') : '';
-    const smtpErrorText = smtpError
-        ? `Reacher could not run the SMTP check: ${smtpErrorType || 'error'}${smtpErrorMessage ? ` — ${smtpErrorMessage}` : ''}`
+    const smtpFailureInfo = smtpFailure(data.smtp);
+    const smtpErrorText = smtpFailureInfo
+        ? `Reacher could not run the SMTP check: ${smtpFailureInfo.type}`
+            + (smtpFailureInfo.description && smtpFailureInfo.description !== smtpFailureInfo.type
+                ? ` (${smtpFailureInfo.description})` : '')
+            + (smtpFailureInfo.message ? ` — ${smtpFailureInfo.message}` : '')
         : '';
 
     if (smtpRan) {
@@ -142,7 +158,7 @@ function mapReacherToReport(data, email) {
         smtp_response: smtpRan
             ? `is_reachable=${reachable}, is_deliverable=${deliverable}`
             : smtpErrorText,
-        engine_error: smtpError ? `${smtpErrorType}: ${smtpErrorMessage}`.trim() : '',
+        engine_error: smtpFailureInfo ? `${smtpFailureInfo.type}: ${smtpFailureInfo.message}`.trim() : '',
         verdict_summary: verdictSummary,
         syntax_valid: syntaxValid,
         smtp_check_ran: smtpRan,
