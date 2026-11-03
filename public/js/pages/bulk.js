@@ -102,6 +102,7 @@ const uploadForm    = document.getElementById('uploadForm');
                     mailbox_verified: v.mailbox_verified || 'no_smtp',
                     valid: !!v.valid,
                     smtp_response: v.smtp_response || '',
+                    catch_all: Boolean(v.catch_all),
                     status: v.status || 'invalid',
                     engine: v.engine || '',
                     backend: v.backend || '',

@@ -89,6 +89,8 @@ const saveBulkJob = async (req, res) => {
                 invalid: stats?.invalid ?? rows.filter(r => !r.valid).length,
                 disposable: stats?.disposable ?? 0,
                 noSmtp: stats?.noSmtp ?? 0,
+                risky: stats?.risky ?? 0,
+                catchAll: stats?.catchAll ?? 0,
             },
         });
         res.status(201).json({ id: job._id, fileName: job.fileName });

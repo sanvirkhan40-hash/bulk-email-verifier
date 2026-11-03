@@ -3,6 +3,13 @@ function fileBaseName(fileName) {
     return String(fileName).replace(/\.[^.]+$/, '') || 'email_verification';
 }
 
+function engineLabel(row) {
+    const engine = String(row.engine || '').toLowerCase();
+    if (!engine) return 'unknown';               // never invent an engine name
+    if (engine === 'reacher') return row.backend || 'Reacher';
+    return row.engine;
+}
+
 function buildVerificationCsv(rows, validOnly) {
     const filtered = validOnly ? rows.filter(r => r.valid) : rows;
     if (!filtered.length) return '';
@@ -21,8 +28,8 @@ function buildVerificationCsv(rows, validOnly) {
             r.catch_all ? 'yes' : 'no',
             r.domain_valid ? 'yes' : 'no',
             `"${r.email}"`,
-            `"${r.engine === 'reacher' ? (r.backend || 'Reacher') : 'truemail-go'}"`,
-            `"${r.engine || ''}"`,
+            `"${engineLabel(r)}"`,
+            `"${r.engine || 'unknown'}"`,
             ...padded,
             `"${String(r.smtp_response || '').replace(/"/g, '""')}"`,
         ].join(','));
@@ -52,4 +59,4 @@ function exportJobCsv(job, validOnly) {
     return true;
 }
 
-window.CsvExport = { fileBaseName, buildVerificationCsv, downloadCsv, exportJobCsv };
+window.CsvExport = { fileBaseName, buildVerificationCsv, downloadCsv, exportJobCsv, engineLabel };
