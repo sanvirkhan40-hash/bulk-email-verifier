@@ -196,6 +196,7 @@ function mapReacherToReport(data, email) {
         verdict_summary: verdictSummary,
         syntax_valid: syntaxValid,
         smtp_check_ran: smtpRan,
+        smtp_deliverable: deliverable,
         catch_all: catchAll,
         microsoft_unverified: Boolean(microsoftProbe && reachable === 'invalid'),
         engine: 'reacher',

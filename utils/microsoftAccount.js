@@ -74,7 +74,23 @@ async function applyToReport(report, email) {
             message: 'Microsoft 365 account lookup',
             detail: 'the account exists',
         });
-    } else if (account.state === 'missing' && !report.valid) {
+    } else if (account.state === 'missing') {
+        // A directory miss alone is not proof: hybrid / on-prem tenants answer
+        // "missing" for every address, including ones the mail server accepts.
+        // If SMTP accepted the recipient, keep that answer.
+        const smtpAccepted = report.smtp_deliverable === true
+            || report.mailbox_verified === 'yes'
+            || report.mailbox_verified === 'risky'
+            || report.mailbox_verified === 'catch_all';
+        if (smtpAccepted) {
+            (report.checks = report.checks || []).push({
+                step: 'account',
+                passed: false,
+                message: 'Microsoft 365 account lookup',
+                detail: 'no record in the cloud directory, but the mail server accepted the address — kept as accepted',
+            });
+            return report;
+        }
         report.valid = false;
         report.mailbox_verified = 'no';
         report.microsoft_unverified = false;
