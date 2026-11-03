@@ -99,6 +99,7 @@ const uploadForm    = document.getElementById('uploadForm');
 
         async function runVerificationLoop(job) {
             jobRunning = true;
+            BulkJob.setActive(true);
             const emails = job.emails || [];
             let nextEmailIndex = job.nextEmailIndex || 0;
             job.verifyMap = job.verifyMap || {};
@@ -179,8 +180,9 @@ const uploadForm    = document.getElementById('uploadForm');
 
             await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
-            job.status = 'complete';
+            job.status = 'done';
             jobRunning = false;
+            BulkJob.setActive(false);
             BulkJob.saveBulkJob(job);
             await persistBulkJob(job);
             showToast('Bulk verification complete!', 'success');
@@ -191,49 +193,77 @@ const uploadForm    = document.getElementById('uploadForm');
             fileInput.disabled = false;
         }
 
-        async function resumeJob(job) {
+        function showResults(job) {
             currentJob = job;
             fileRows = job.fileRows || [];
             document.getElementById('fileNameText').textContent = job.fileName || 'Uploaded file';
             document.getElementById('fileNameDisplay').classList.remove('d-none');
             progressArea.classList.remove('d-none');
             document.getElementById('resultsTableSection').classList.remove('d-none');
-            if (job.status === 'complete') {
-                syncResultsUI(job);
-                exportBtn.classList.remove('d-none');
-                exportValidBtn.classList.remove('d-none');
-                await persistBulkJob(job);
-                return;
-            }
-            await runVerificationLoop(job);
+            syncResultsUI(job);
+            exportBtn.classList.remove('d-none');
+            exportValidBtn.classList.remove('d-none');
         }
 
-        document.getElementById('resumeJobBtn')?.addEventListener('click', () => {
-            const job = BulkJob.loadBulkJob();
-            if (job) resumeJob(job);
-        });
+        function dismissBanner() {
+            const banner = document.getElementById('resumeBanner');
+            if (banner) banner.classList.add('d-none');
+        }
+
+        // A saved run is data, never a command: it is shown with its progress and
+        // waits for Resume or Discard.
+        function offerSavedRun(job) {
+            const banner = document.getElementById('resumeBanner');
+            if (!banner || !job) return;
+            const state = BulkJob.progress(job);
+            const finished = job.status === 'done';
+
+            banner.classList.remove('d-none');
+            document.getElementById('resumeBannerText').textContent =
+                (finished ? 'Finished run: ' : 'Unfinished run: ') + job.fileName +
+                ' — ' + state.done + ' of ' + state.total + ' checked · ' + BulkJob.describe(job);
+
+            const resume = document.getElementById('resumeJobBtn');
+            resume.textContent = finished ? 'Show results' : 'Resume';
+            resume.onclick = () => {
+                dismissBanner();
+                if (finished) {
+                    showResults(job);
+                    return;
+                }
+                runVerificationLoop(job);
+            };
+
+            const discard = document.getElementById('discardJobBtn');
+            if (discard) {
+                discard.onclick = () => {
+                    BulkJob.clear();
+                    currentJob = null;
+                    results = [];
+                    fileRows = [];
+                    document.getElementById('resultsTableBody').innerHTML = '';
+                    document.getElementById('resultsTableSection').classList.add('d-none');
+                    progressArea.classList.add('d-none');
+                    document.getElementById('fileNameDisplay').classList.add('d-none');
+                    dismissBanner();
+                    showToast('Saved run discarded', 'info');
+                };
+            }
+        }
 
         document.addEventListener('DOMContentLoaded', () => {
-            const job = BulkJob.loadBulkJob();
-            if (!job) return;
-            const banner = document.getElementById('resumeBanner');
-            if (job.status === 'running') {
-                banner.classList.remove('d-none');
-                document.getElementById('resumeBannerText').textContent =
-                    `Paused bulk job: ${job.stats?.completed || 0} / ${job.fileRows?.length || 0} — click Resume`;
-                resumeJob(job);
-            } else if (job.status === 'complete' && job.results?.length) {
-                banner.classList.remove('d-none');
-                document.getElementById('resumeBannerText').textContent =
-                    `Last bulk run finished (${job.results.length} rows) — results restored`;
-                document.getElementById('resumeJobBtn').textContent = 'Show results';
-                fileRows = job.fileRows;
-                results = job.results;
-                renderAllRows();
-                progressArea.classList.remove('d-none');
-                if (job.stats) updateStatsUI(job.stats, fileRows.length);
-                exportBtn.classList.remove('d-none');
-                exportValidBtn.classList.remove('d-none');
+            const saved = BulkJob.loadBulkJob();
+            if (saved) offerSavedRun(saved);
+        });
+
+        // Leaving the page pauses the run instead of leaving it marked "running",
+        // so a refresh can only ever offer to continue.
+        window.addEventListener('pagehide', () => {
+            if (currentJob && jobRunning) {
+                currentJob.status = 'paused';
+                jobRunning = false;
+                BulkJob.setActive(false);
+                BulkJob.flush(currentJob);
             }
         });
 
@@ -363,18 +393,10 @@ const uploadForm    = document.getElementById('uploadForm');
                 updateFileDisplay(file.name);
                 showToast(`Found ${emails.length} unique emails (${fileRows.length} rows). Verifying...`, 'info');
 
-                const job = {
-                    status: 'running',
-                    fileName: file.name,
-                    fileRows,
-                    emails,
-                    verifyMap: {},
-                    nextEmailIndex: 0,
-                    results: [],
-                    stats: { valid: 0, invalid: 0, disposable: 0, noSmtp: 0, risky: 0, completed: 0 },
-                    startedAt: Date.now(),
-                    savedToServer: false,
-                };
+                const job = BulkJob.create({ fileName: file.name, emails: emails, fileRows: fileRows });
+                job.status = 'running';
+                job.results = [];
+                job.stats = { valid: 0, invalid: 0, disposable: 0, noSmtp: 0, risky: 0, completed: 0 };
                 currentJob = job;
                 BulkJob.saveBulkJob(job);
                 await runVerificationLoop(job);

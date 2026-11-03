@@ -59,10 +59,11 @@
             <div id="resumeBanner" class="notice warn mb-4 d-none">
                 <i class="fa-solid fa-rotate-left"></i>
                 <div style="flex:1">
-                    <b>Unfinished run found.</b>
+                    <b>Saved run found.</b>
                     <span id="resumeBannerText" class="small"></span>
                 </div>
                 <button class="btn sm" id="resumeJobBtn">Resume</button>
+                <button class="btn sm ghost" id="discardJobBtn" title="Delete this saved run">Discard</button>
             </div>
 
             <div class="grid split-wide">
@@ -109,7 +110,7 @@
                         </div>
 
                         <p class="small text-muted mt-3 mb-0">
-                            Close the tab and the run is saved — reopen this page to resume where it stopped.
+                            Close the tab and the run is saved. Reopen this page and press Resume — it never starts on its own.
                         </p>
                     </div>
                 </div>
@@ -152,8 +153,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script src="/js/app.js?v=5"></script>
-<script src="/js/bulk-job.js?v=5"></script>
+<script src="/js/bulk-job.js?v=6"></script>
 <script src="/js/csv-export.js?v=5"></script>
-<script src="/js/pages/bulk.js?v=5"></script>
+<script src="/js/pages/bulk.js?v=6"></script>
 </body>
 </html>
