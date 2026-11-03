@@ -16,7 +16,10 @@ function isMicrosoftHosted(mxRecords = []) {
     });
 }
 
-async function lookupAccount(email) {
+const CACHE_MS = 10 * 60 * 1000;
+const cache = new Map();
+
+async function queryAccount(email) {
     try {
         const { data } = await axios.post(
             ENDPOINT,
@@ -34,6 +37,21 @@ async function lookupAccount(email) {
     } catch (error) {
         return { state: 'unknown', reason: error.message };
     }
+}
+
+async function lookupAccount(email) {
+    const key = String(email || '').toLowerCase();
+    const hit = cache.get(key);
+    if (hit && Date.now() - hit.at < CACHE_MS) return hit.result;
+
+    let result = await queryAccount(email);
+    if (result.state === 'unknown') {
+        // Microsoft throttles bursts; one short retry usually clears it.
+        await new Promise(resolve => setTimeout(resolve, 700));
+        result = await queryAccount(email);
+    }
+    cache.set(key, { at: Date.now(), result });
+    return result;
 }
 
 // Only touches a report that is not already valid: a positive SMTP/headless

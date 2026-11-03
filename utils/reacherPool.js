@@ -103,6 +103,9 @@ function effectiveLimits(backend, settings) {
 // Backends that follow the global row share ONE per-second clock (so two
 // Reachers do not double the rate). An overridden backend paces itself.
 const sharedSecond = { secLast: 0 };
+// Backends without their own limits also share one minute/day budget, so
+// "1 per minute" means one check per minute in total, not one per backend.
+const sharedBudget = newWindow();
 const ownSeconds = new Map();
 
 function secondsState(backend, limits) {
@@ -143,10 +146,12 @@ function backendWait(backend, provider, now, settings) {
     const limits = effectiveLimits(backend, settings);
     const entry = usageEntry(backend.id);
 
+    const budget = limits.overridden ? entry.global : sharedBudget;
+
     let wait = Math.max(
         secondWait(secondsState(backend, limits), limits.perSecond, now),
-        minuteWait(entry.global, limits.perMinute, now),
-        dayWait(entry.global, limits.perDay, now),
+        minuteWait(budget, limits.perMinute, now),
+        dayWait(budget, limits.perDay, now),
     );
 
     // A provider row on this backend is an extra cap on top of its Overall row.
@@ -167,7 +172,10 @@ function recordStart(backend, provider, now, settings) {
     const limits = effectiveLimits(backend, settings);
     const entry = usageEntry(backend.id);
     secondsState(backend, limits).secLast = now;
+    // Always count per backend for the usage display, but only charge the shared
+    // budget when this backend is not running on its own numbers.
     commitStart(entry.global, now);
+    if (!limits.overridden) commitStart(sharedBudget, now);
     commitStart(entry.providers[provider] || (entry.providers[provider] = newWindow()), now);
 }
 

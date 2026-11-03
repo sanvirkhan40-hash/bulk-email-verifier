@@ -132,6 +132,7 @@ const uploadForm    = document.getElementById('uploadForm');
                             stored = true;
                         } catch (error) {
                             const status = error.response && error.response.status;
+
                             if (status === 429) {
                                 const hint = Number(error.response.data && error.response.data.retryAfter) || 30;
                                 const wait = Math.min(Math.max(hint, 5), 120);
@@ -139,7 +140,28 @@ const uploadForm    = document.getElementById('uploadForm');
                                 await new Promise(resolve => setTimeout(resolve, wait * 1000));
                                 continue;
                             }
-                            job.verifyMap[email] = { email, valid: false, domain_valid: false, mailbox_verified: 'no_smtp', status: 'error' };
+
+                            // Network blips and 5xx are worth another try before we
+                            // write the address off.
+                            const transient = !error.response || status >= 500;
+                            if (transient && attempts < 3) {
+                                progressText.textContent = `Retrying ${email}…`;
+                                await new Promise(resolve => setTimeout(resolve, 3000));
+                                continue;
+                            }
+
+                            const data = (error.response && error.response.data) || {};
+                            const reason = data.message || data.error || error.message || 'request failed';
+                            job.verifyMap[email] = {
+                                email,
+                                valid: false,
+                                domain_valid: false,
+                                mailbox_verified: 'no_smtp',
+                                status: 'error',
+                                engine: 'error',
+                                smtp_response: 'Not processed: ' + reason,
+                                verdict_summary: email + ' — not processed: ' + reason,
+                            };
                             stored = true;
                         }
                     }

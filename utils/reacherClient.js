@@ -50,8 +50,10 @@ function mapReacherToReport(data, email) {
     // recipients and policy blocks are indistinguishable from a missing user.
     // The rejection therefore cannot be read as "invalid".
     const microsoftHosted = mxRecords.some(record => /\.mail\.protection\.outlook\.com$/i.test(record.host));
-    const smtpMethod = String(data?.debug?.smtp?.verif_method?.type || '').toLowerCase() === 'smtp';
-    const microsoftProbe = microsoftHosted && smtpMethod;
+    // Treat an unknown/absent debug block as the SMTP path: headless is the only
+    // other method and it never produces a bare 5xx for Microsoft domains.
+    const smtpMethod = String(data?.debug?.smtp?.verif_method?.type || 'smtp').toLowerCase();
+    const microsoftProbe = microsoftHosted && smtpMethod !== 'headless';
 
     checks.push({
         step: 'syntax',
