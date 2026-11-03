@@ -7,7 +7,7 @@ function isValidStatus(status, details) {
 
 function isUnknownStatus(status) {
     const s = String(status || '').toLowerCase();
-    return s === 'unknown' || s === 'no_smtp' || s === 'risky';
+    return s === 'unknown' || s === 'no_smtp' || s === 'risky' || s === 'catch_all';
 }
 
 function classifyHistoryRecord(record) {

@@ -98,6 +98,7 @@ function mapReacherToReport(data, email) {
     const smtpRan = smtp.can_connect_smtp === true;
     const deliverable = smtp.is_deliverable === true;
     const reachable = data.is_reachable || 'unknown';
+    const catchAll = smtpRan && smtp.is_catch_all === true;
 
     // Reacher reports a broken browser/SMTP attempt as an error block. Without
     // this, the result is a silent "no_smtp" and the real reason is lost.
@@ -120,9 +121,11 @@ function mapReacherToReport(data, email) {
                     : 'SMTP mailbox not confirmed (Reacher)'),
             detail: deliverable
                 ? '250 OK / is_deliverable'
-                : (microsoftProbe && reachable === 'invalid'
-                    ? 'is_reachable: invalid — Microsoft 365 rejection is not conclusive (DBEB / policy block)'
-                    : `is_reachable: ${reachable}`),
+                : (catchAll
+                    ? `is_reachable: ${reachable} — domain is catch-all`
+                    : (microsoftProbe && reachable === 'invalid'
+                        ? 'is_reachable: invalid — Microsoft 365 rejection is not conclusive (DBEB / policy block)'
+                        : `is_reachable: ${reachable}`)),
         });
     } else if (smtpErrorText) {
         checks.push({
@@ -137,7 +140,11 @@ function mapReacherToReport(data, email) {
 
     let mailboxVerified = 'no_smtp';
 
-    if (reachable === 'safe' || deliverable) {
+    if (catchAll) {
+        // The domain answers 250 for addresses that do not exist, so a positive
+        // reply cannot prove that this particular mailbox exists.
+        mailboxVerified = 'catch_all';
+    } else if (reachable === 'safe' || deliverable) {
         mailboxVerified = 'yes';
     } else if (reachable === 'risky') {
         // Reacher accepted the recipient but flagged it (role account,
@@ -155,6 +162,9 @@ function mapReacherToReport(data, email) {
 
     if (valid) {
         verdictSummary = `${email} seems to be valid`;
+    } else if (mailboxVerified === 'catch_all') {
+        verdictSummary =
+            `${email} — the domain accepts every address (catch-all), so this mailbox cannot be confirmed`;
     } else if (mailboxVerified === 'risky') {
         verdictSummary =
             `${email} exists but is a risky mailbox (role account or catch-all) — not confirmed for outreach`;
@@ -186,6 +196,7 @@ function mapReacherToReport(data, email) {
         verdict_summary: verdictSummary,
         syntax_valid: syntaxValid,
         smtp_check_ran: smtpRan,
+        catch_all: catchAll,
         microsoft_unverified: Boolean(microsoftProbe && reachable === 'invalid'),
         engine: 'reacher',
         reacher_raw: data,

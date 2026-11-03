@@ -9,7 +9,7 @@ function buildVerificationCsv(rows, validOnly) {
 
     const maxCols = Math.max(...filtered.map(r => (r.originalRow || []).length), 0);
     const origHeaders = Array.from({ length: maxCols }, (_, i) => `col_${i + 1}`);
-    const header = ['valid', 'mailbox_verified', 'domain_valid', 'email', 'checked_by', 'engine', ...origHeaders, 'smtp_response'].join(',');
+    const header = ['valid', 'mailbox_verified', 'catch_all', 'domain_valid', 'email', 'checked_by', 'engine', ...origHeaders, 'smtp_response'].join(',');
     const lines = [header];
 
     filtered.forEach(r => {
@@ -18,6 +18,7 @@ function buildVerificationCsv(rows, validOnly) {
         lines.push([
             r.valid ? 'yes' : 'no',
             r.mailbox_verified || 'no_smtp',
+            r.catch_all ? 'yes' : 'no',
             r.domain_valid ? 'yes' : 'no',
             `"${r.email}"`,
             `"${r.engine === 'reacher' ? (r.backend || 'Reacher') : 'truemail-go'}"`,

@@ -66,7 +66,7 @@ const verifyForm    = document.getElementById('verifyForm');
                 data.domain_valid ? 'Domain: Valid' : 'Domain: Invalid',
                 data.domain_valid ? 'bg-success' : 'bg-danger');
 
-            const mbMap = { yes: ['Mailbox: Verified', 'bg-success'], no: ['Mailbox: Not verified', 'bg-danger'], no_smtp: ['Mailbox: SMTP unavailable', 'bg-warning text-dark'], risky: ['Mailbox: Risky (role account / catch-all)', 'bg-warning text-dark'] };
+            const mbMap = { yes: ['Mailbox: Verified', 'bg-success'], no: ['Mailbox: Not verified', 'bg-danger'], no_smtp: ['Mailbox: SMTP unavailable', 'bg-warning text-dark'], risky: ['Mailbox: Risky (role account)', 'bg-warning text-dark'], catch_all: ['Mailbox: Catch-all domain — not confirmed', 'bg-warning text-dark'] };
             const [mbText, mbCls] = mbMap[data.mailbox_verified] || mbMap.no_smtp;
             badge(document.getElementById('mailboxBadge'), mbText, mbCls);
 

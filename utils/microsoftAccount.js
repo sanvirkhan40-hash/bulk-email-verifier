@@ -65,6 +65,7 @@ async function applyToReport(report, email) {
     if (account.state === 'exists' && !report.valid) {
         report.valid = true;
         report.mailbox_verified = 'yes';
+        report.catch_all = false;
         report.microsoft_unverified = false;
         report.verdict_summary = email + ' seems to be valid (Microsoft 365 account confirmed)';
         (report.checks = report.checks || []).push({
