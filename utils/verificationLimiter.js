@@ -225,6 +225,19 @@ async function pump() {
     try {
         while (queue.length) {
             const settings = await readSettings();
+
+            // Reject anything that has been waiting too long, before dispatching.
+            const nowSweep = Date.now();
+            for (let i = queue.length - 1; i >= 0; i -= 1) {
+                const entry = queue[i];
+                if (entry.deadline && entry.deadline < nowSweep) {
+                    queue.splice(i, 1);
+                    const wait = scopeWait(entry.provider, providerLimits(settings, entry.provider), nowSweep);
+                    entry.reject(waitError(entry.provider, (wait || 30000) / 1000));
+                }
+            }
+            if (!queue.length) break;
+
             if (active >= settings.maxConcurrent) break;
 
             const now = Date.now();
@@ -282,9 +295,29 @@ async function pump() {
     }
 }
 
-function runWithVerificationLimit(email, task) {
+// A request must not sit on an open HTTP connection while a provider is capped:
+// Cloudflare cuts the connection at 120s and the browser records a failure.
+// Anything that cannot start soon is rejected with a retry hint instead.
+const MAX_QUEUE_WAIT_MS = Math.max(2000, parseInt(process.env.LIMITER_MAX_WAIT_MS || '15000', 10));
+
+function waitError(provider, retryAfter, message) {
+    const error = new Error(message || `Rate limit for ${provider} — retry in ${retryAfter}s`);
+    error.code = 'LIMITER_WAIT';
+    error.provider = provider;
+    error.retryAfter = Math.max(5, Math.ceil(retryAfter));
+    return error;
+}
+
+async function runWithVerificationLimit(email, task) {
+    const provider = providerFor(email);
+    const settings = await readSettings();
+    const now = Date.now();
+    const gateWait = scopeWait(provider, providerLimits(settings, provider), now);
+    if (gateWait > MAX_QUEUE_WAIT_MS) {
+        throw waitError(provider, gateWait / 1000);
+    }
     return new Promise((resolve, reject) => {
-        queue.push({ provider: providerFor(email), task, resolve, reject });
+        queue.push({ provider, task, resolve, reject, deadline: now + MAX_QUEUE_WAIT_MS });
         pump();
     });
 }

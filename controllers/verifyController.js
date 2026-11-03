@@ -68,6 +68,14 @@ const verifySingleEmail = async (req, res) => {
             historyId: history._id,
         });
     } catch (error) {
+        if (error.code === 'LIMITER_WAIT') {
+            return res.status(429).json({
+                message: error.message,
+                retryAfter: error.retryAfter,
+                provider: error.provider,
+                email,
+            });
+        }
         console.error('Verify Single Email Error:', error.message);
         res.status(500).json({ message: 'Error verifying email', error: error.message });
     }

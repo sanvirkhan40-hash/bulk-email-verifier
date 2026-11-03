@@ -118,12 +118,36 @@ const uploadForm    = document.getElementById('uploadForm');
                 while (cursor < pending.length) {
                     const email = pending[cursor];
                     cursor += 1;
-                    try {
-                        const res = await axios.post('/api/verify/single', { email, source: 'bulk' }, { timeout: 180000 });
-                        job.verifyMap[email] = res.data;
-                    } catch (_) {
-                        job.verifyMap[email] = { email, valid: false, domain_valid: false, mailbox_verified: 'no_smtp', status: 'error' };
+
+                    // The server answers 429 when a provider cap is too far away to
+                    // wait on this connection. Sleep for the hinted time and retry
+                    // instead of turning the address into a bogus result.
+                    let attempts = 0;
+                    let stored = false;
+                    while (!stored && attempts < 10) {
+                        attempts += 1;
+                        try {
+                            const res = await axios.post('/api/verify/single', { email, source: 'bulk' }, { timeout: 60000 });
+                            job.verifyMap[email] = res.data;
+                            stored = true;
+                        } catch (error) {
+                            const status = error.response && error.response.status;
+                            if (status === 429) {
+                                const hint = Number(error.response.data && error.response.data.retryAfter) || 30;
+                                const wait = Math.min(Math.max(hint, 5), 120);
+                                progressText.textContent = `Rate limit — waiting ${wait}s…`;
+                                await new Promise(resolve => setTimeout(resolve, wait * 1000));
+                                continue;
+                            }
+                            job.verifyMap[email] = { email, valid: false, domain_valid: false, mailbox_verified: 'no_smtp', status: 'error' };
+                            stored = true;
+                        }
                     }
+
+                    if (!stored) {
+                        job.verifyMap[email] = { email, valid: false, domain_valid: true, mailbox_verified: 'no_smtp', status: 'no_smtp' };
+                    }
+
                     completed += 1;
                     job.completedCount = completed;
                     syncResultsUI(job);

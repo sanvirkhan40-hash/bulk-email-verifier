@@ -5,7 +5,7 @@ const { providerFor, readSettings } = require('./verificationLimiter');
 
 const CACHE_MS = 15000;
 const PROBE_TIMEOUT_MS = 4000;
-const DEFAULT_MAX_WAIT_MS = 60000;
+const DEFAULT_MAX_WAIT_MS = 30000;
 const PROVIDER_SCOPES = ['gmail', 'yahoo', 'microsoft', 'other'];
 
 let cache = { at: 0, list: [] };
@@ -409,7 +409,11 @@ async function verifyWithPool(body, { timeoutMs, provider } = {}) {
         if (ticket.wait !== undefined) {
             if (ticket.wait <= 0) continue;
             if (Date.now() + ticket.wait > deadline) {
-                throw new Error('All Reacher backends are at their configured limits for ' + scope);
+                const limitError = new Error('All Reacher backends are at their configured limits for ' + scope);
+                limitError.code = 'LIMITER_WAIT';
+                limitError.provider = scope;
+                limitError.retryAfter = Math.min(60, Math.max(10, Math.ceil(ticket.wait / 1000)));
+                throw limitError;
             }
             await sleep(Math.min(Math.max(ticket.wait, 50), 1000));
             continue;
