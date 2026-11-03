@@ -13,6 +13,31 @@ const uploadForm    = document.getElementById('uploadForm');
         let jobRunning = false;
         const CONCURRENCY = 3;
 
+        // Run controls. Pause/Stop only affect the queue: a check already in
+        // flight is always allowed to finish, so nothing is left half-recorded.
+        const runControl = { paused: false, stopped: false };
+
+        const pauseBtn = document.getElementById('bulkPauseBtn');
+        const stopBtn = document.getElementById('bulkStopBtn');
+        const restartBtn = document.getElementById('bulkRestartBtn');
+        const clearBtn = document.getElementById('bulkClearBtn');
+
+        function setControlState(mode) {
+            const running = mode === 'running';
+            const paused = mode === 'paused';
+            const idle = mode === 'idle';
+
+            if (pauseBtn) {
+                pauseBtn.disabled = !(running || paused);
+                pauseBtn.innerHTML = paused
+                    ? '<i class="fa-solid fa-play"></i>Resume'
+                    : '<i class="fa-solid fa-pause"></i>Pause';
+            }
+            if (stopBtn) stopBtn.disabled = !(running || paused);
+            if (restartBtn) restartBtn.disabled = running || idle;
+            if (clearBtn) clearBtn.disabled = running;
+        }
+
         // Group by provider, then round-robin so a file sorted by domain does
         // not send all Gmail first and leave Outlook/Other waiting.
         function providerOf(email) {
@@ -101,8 +126,12 @@ const uploadForm    = document.getElementById('uploadForm');
         }
 
         async function runVerificationLoop(job) {
+            currentJob = job;
             jobRunning = true;
             BulkJob.setActive(true);
+            runControl.paused = false;
+            runControl.stopped = false;
+            setControlState('running');
             const emails = job.emails || [];
             let nextEmailIndex = job.nextEmailIndex || 0;
             job.verifyMap = job.verifyMap || {};
@@ -120,6 +149,13 @@ const uploadForm    = document.getElementById('uploadForm');
 
             async function worker() {
                 while (cursor < pending.length) {
+                    // Pause holds the queue; Stop ends the run for this tab.
+                    while (runControl.paused && !runControl.stopped) {
+                        progressText.textContent = 'Paused — ' + (job.completedCount || 0) + ' done';
+                        await new Promise(resolve => setTimeout(resolve, 250));
+                    }
+                    if (runControl.stopped) return;
+
                     const email = pending[cursor];
                     cursor += 1;
 
@@ -183,6 +219,21 @@ const uploadForm    = document.getElementById('uploadForm');
 
             await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
+            if (runControl.stopped) {
+                job.status = 'paused';
+                jobRunning = false;
+                BulkJob.setActive(false);
+                BulkJob.saveBulkJob(job);
+                syncResultsUI(job);
+                setControlState('paused');
+                exportBtn.classList.remove('d-none');
+                exportValidBtn.classList.remove('d-none');
+                uploadBtn.disabled = false;
+                fileInput.disabled = false;
+                showToast('Run stopped — ' + (job.completedCount || 0) + ' checked. Resume or Restart when ready.', 'info');
+                return;
+            }
+
             job.status = 'done';
             jobRunning = false;
             BulkJob.setActive(false);
@@ -194,6 +245,7 @@ const uploadForm    = document.getElementById('uploadForm');
             uploadBtn.textContent = '🔄 Verify Another File';
             uploadBtn.disabled = false;
             fileInput.disabled = false;
+            setControlState('done');
         }
 
         function showResults(job) {
@@ -206,6 +258,7 @@ const uploadForm    = document.getElementById('uploadForm');
             syncResultsUI(job);
             exportBtn.classList.remove('d-none');
             exportValidBtn.classList.remove('d-none');
+            setControlState(job.status === 'done' ? 'done' : 'paused');
         }
 
         function dismissBanner() {
@@ -268,6 +321,68 @@ const uploadForm    = document.getElementById('uploadForm');
                 BulkJob.setActive(false);
                 BulkJob.flush(currentJob);
             }
+        });
+
+        function restartRun() {
+            const job = currentJob;
+            if (!job) return;
+            job.verifyMap = {};
+            job.results = [];
+            job.completedCount = 0;
+            job.savedToServer = false;
+            job.stats = { valid: 0, invalid: 0, disposable: 0, noSmtp: 0, risky: 0, catchAll: 0, completed: 0 };
+            results = [];
+            rowIndex = 0;
+            document.getElementById('resultsTableBody').innerHTML = '';
+            document.getElementById('resultsTableSection').classList.remove('d-none');
+            BulkJob.clear();
+            runVerificationLoop(job);
+        }
+
+        function clearEverything() {
+            BulkJob.clear();
+            currentJob = null;
+            results = [];
+            fileRows = [];
+            document.getElementById('resultsTableBody').innerHTML = '';
+            document.getElementById('resultsTableSection').classList.add('d-none');
+            progressArea.classList.add('d-none');
+            document.getElementById('fileNameDisplay').classList.add('d-none');
+            exportBtn.classList.add('d-none');
+            exportValidBtn.classList.add('d-none');
+            uploadBtn.textContent = 'Verify file';
+            uploadBtn.disabled = false;
+            fileInput.disabled = false;
+            dismissBanner();
+            setControlState('idle');
+            showToast('Cleared', 'info');
+        }
+
+        pauseBtn?.addEventListener('click', () => {
+            if (!jobRunning) return;
+            runControl.paused = !runControl.paused;
+            setControlState(runControl.paused ? 'paused' : 'running');
+            progressText.textContent = runControl.paused ? 'Paused' : 'Resumed';
+        });
+
+        stopBtn?.addEventListener('click', () => {
+            if (!jobRunning) return;
+            if (!window.confirm('Stop this run? Addresses already checked are kept — you can resume or restart later.')) return;
+            runControl.stopped = true;
+            runControl.paused = false;
+            progressText.textContent = 'Stopping…';
+        });
+
+        restartBtn?.addEventListener('click', () => {
+            if (jobRunning || !currentJob) return;
+            if (!window.confirm('Restart this run from the beginning? Every result for this file is cleared and checked again.')) return;
+            restartRun();
+        });
+
+        clearBtn?.addEventListener('click', () => {
+            if (jobRunning) return;
+            if (!window.confirm('Clear this run and all of its results?')) return;
+            clearEverything();
         });
 
         /* ── File drag & drop ─────────────────────────── */

@@ -99,6 +99,12 @@
                                 <span class="small text-muted">paced by your limits</span>
                             </div>
                             <div class="progress"><div id="progressBar"></div></div>
+                            <div class="btn-row mt-3">
+                                <button class="btn sm" id="bulkPauseBtn" disabled><i class="fa-solid fa-pause"></i>Pause</button>
+                                <button class="btn sm" id="bulkStopBtn" disabled><i class="fa-solid fa-stop"></i>Stop</button>
+                                <button class="btn sm" id="bulkRestartBtn" disabled><i class="fa-solid fa-rotate-right"></i>Restart</button>
+                                <button class="btn sm ghost" id="bulkClearBtn" disabled><i class="fa-solid fa-trash"></i>Clear</button>
+                            </div>
                         </div>
 
                         <div class="grid cols-2 mt-3">
@@ -154,8 +160,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script src="/js/app.js?v=5"></script>
-<script src="/js/bulk-job.js?v=7"></script>
+<script src="/js/bulk-job.js?v=8"></script>
 <script src="/js/csv-export.js?v=5"></script>
-<script src="/js/pages/bulk.js?v=7"></script>
+<script src="/js/pages/bulk.js?v=8"></script>
 </body>
 </html>
