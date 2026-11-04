@@ -43,7 +43,7 @@ async function claimNext() {
     return VerifyJob.findOneAndUpdate(
         { status: 'queued' },
         { $set: { status: 'running', workerId: WORKER_ID, lockedAt: new Date() } },
-        { new: true, sort: { createdAt: 1 } },
+        { returnDocument: 'after', sort: { createdAt: 1 } },
     );
 }
 

@@ -70,7 +70,7 @@ async function setStatus(req, res, from, to, message) {
         const job = await VerifyJob.findOneAndUpdate(
             { _id: req.params.id, user: req.user._id, status: { $in: from } },
             { $set: { status: to } },
-            { new: true },
+            { returnDocument: 'after' },
         );
         if (!job) return res.status(409).json({ message: 'That job cannot be changed right now' });
         res.json({ id: String(job._id), status: job.status });

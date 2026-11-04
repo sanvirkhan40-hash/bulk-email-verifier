@@ -53,7 +53,7 @@ const getVerificationSettings = async (req, res) => {
         const settings = await VerificationSettings.findOneAndUpdate(
             { key: 'global' },
             { $setOnInsert: { key: 'global' } },
-            { new: true, upsert: true, setDefaultsOnInsert: true }
+            { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true }
         ).lean();
         res.json({
             globalPerSecond: settings.globalPerSecond ?? FALLBACK.globalPerSecond,
@@ -120,7 +120,7 @@ const updateVerificationSettings = async (req, res) => {
                     updatedBy: req.user.email,
                 },
             },
-            { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
+            { returnDocument: 'after', upsert: true, runValidators: true, setDefaultsOnInsert: true }
         ).lean();
 
         // Rate changes take effect for the next queued check, not just after a restart.
