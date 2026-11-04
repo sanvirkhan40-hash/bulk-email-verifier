@@ -87,10 +87,18 @@ const uploadForm    = document.getElementById('uploadForm');
         }
 
         function syncResultsUI(job) {
-            const rows = job.fileRows || [];
+            let rows = job.fileRows || [];
+            const map = job.verifyMap || {};
+
+            // A job picked up from the server may not have fileRows (older runs,
+            // another device): fall back to the results themselves.
+            if (!rows.length && Object.keys(map).length) {
+                rows = Object.keys(map).map(email => ({ email: email }));
+                job.fileRows = rows;
+            }
+
             results = [];
             const stats = { valid: 0, invalid: 0, disposable: 0, noSmtp: 0, risky: 0, catchAll: 0, completed: 0 };
-            const map = job.verifyMap || {};
 
             rows.forEach(row => {
                 const v = map[row.email];
@@ -126,129 +134,6 @@ const uploadForm    = document.getElementById('uploadForm');
             updateStatsUI(stats, rows.length);
         }
 
-        async function runVerificationLoop(job) {
-            currentJob = job;
-            jobRunning = true;
-            BulkJob.setActive(true);
-            runControl.paused = false;
-            runControl.stopped = false;
-            setControlState('running');
-            const emails = job.emails || [];
-            let nextEmailIndex = job.nextEmailIndex || 0;
-            job.verifyMap = job.verifyMap || {};
-
-            progressArea.classList.remove('d-none');
-            document.getElementById('resultsTableSection').classList.remove('d-none');
-            uploadBtn.disabled = true;
-            fileInput.disabled = true;
-            job.status = 'running';
-            BulkJob.saveBulkJob(job);
-
-            const pending = interleaveByProvider(emails.filter(email => !job.verifyMap[email]));
-            let cursor = 0;
-            let completed = Object.keys(job.verifyMap || {}).length;
-
-            async function worker() {
-                while (cursor < pending.length) {
-                    // Pause holds the queue; Stop ends the run for this tab.
-                    while (runControl.paused && !runControl.stopped) {
-                        progressText.textContent = 'Paused — ' + (job.completedCount || 0) + ' done';
-                        await new Promise(resolve => setTimeout(resolve, 250));
-                    }
-                    if (runControl.stopped) return;
-
-                    const email = pending[cursor];
-                    cursor += 1;
-
-                    // The server answers 429 when a provider cap is too far away to
-                    // wait on this connection. Sleep for the hinted time and retry
-                    // instead of turning the address into a bogus result.
-                    let attempts = 0;
-                    let stored = false;
-                    while (!stored && attempts < 10) {
-                        attempts += 1;
-                        try {
-                            const res = await axios.post('/api/verify/single', { email, source: 'bulk' }, { timeout: 60000 });
-                            job.verifyMap[email] = res.data;
-                            stored = true;
-                        } catch (error) {
-                            const status = error.response && error.response.status;
-
-                            if (status === 429) {
-                                const hint = Number(error.response.data && error.response.data.retryAfter) || 30;
-                                const wait = Math.min(Math.max(hint, 5), 120);
-                                progressText.textContent = `Rate limit — waiting ${wait}s…`;
-                                await new Promise(resolve => setTimeout(resolve, wait * 1000));
-                                continue;
-                            }
-
-                            // Network blips and 5xx are worth another try before we
-                            // write the address off.
-                            const transient = !error.response || status >= 500;
-                            if (transient && attempts < 3) {
-                                progressText.textContent = `Retrying ${email}…`;
-                                await new Promise(resolve => setTimeout(resolve, 3000));
-                                continue;
-                            }
-
-                            const data = (error.response && error.response.data) || {};
-                            const reason = data.message || data.error || error.message || 'request failed';
-                            job.verifyMap[email] = {
-                                email,
-                                valid: false,
-                                domain_valid: false,
-                                mailbox_verified: 'no_smtp',
-                                status: 'error',
-                                engine: 'error',
-                                smtp_response: 'Not processed: ' + reason,
-                                verdict_summary: email + ' — not processed: ' + reason,
-                            };
-                            stored = true;
-                        }
-                    }
-
-                    if (!stored) {
-                        job.verifyMap[email] = { email, valid: false, domain_valid: true, mailbox_verified: 'no_smtp', status: 'no_smtp' };
-                    }
-
-                    completed += 1;
-                    job.completedCount = completed;
-                    syncResultsUI(job);
-                    BulkJob.saveBulkJob(job);
-                }
-            }
-
-            await Promise.all(Array.from({ length: CONCURRENCY }, worker));
-
-            if (runControl.stopped) {
-                job.status = 'paused';
-                jobRunning = false;
-                BulkJob.setActive(false);
-                BulkJob.saveBulkJob(job);
-                syncResultsUI(job);
-                setControlState('paused');
-                exportBtn.classList.remove('d-none');
-                exportValidBtn.classList.remove('d-none');
-                uploadBtn.disabled = false;
-                fileInput.disabled = false;
-                showToast('Run stopped — ' + (job.completedCount || 0) + ' checked. Resume or Restart when ready.', 'info');
-                return;
-            }
-
-            job.status = 'done';
-            jobRunning = false;
-            BulkJob.setActive(false);
-            BulkJob.saveBulkJob(job);
-            await persistBulkJob(job);
-            showToast('Bulk verification complete!', 'success');
-            exportBtn.classList.remove('d-none');
-            exportValidBtn.classList.remove('d-none');
-            uploadBtn.textContent = '🔄 Verify Another File';
-            uploadBtn.disabled = false;
-            fileInput.disabled = false;
-            setControlState('done');
-        }
-
         function showResults(job) {
             currentJob = job;
             fileRows = job.fileRows || [];
@@ -267,55 +152,77 @@ const uploadForm    = document.getElementById('uploadForm');
             if (banner) banner.classList.add('d-none');
         }
 
-        // A saved run is data, never a command: it is shown with its progress and
-        // waits for Resume or Discard.
-        function offerSavedRun(job) {
-            const banner = document.getElementById('resumeBanner');
-            if (!banner || !job) return;
-            const state = BulkJob.progress(job);
-            const finished = job.status === 'done';
+        // Every run lives on the server. On load we attach to it — running or
+        // paused — and just watch. Nothing is started from the browser.
+        async function attachToJob(id, localJob) {
+            const { data } = await axios.get('/api/verify/jobs/' + id + '?since=0');
+            const job = localJob || BulkJob.create({
+                fileName: data.fileName || 'Uploaded file',
+                emails: data.emails || [],
+                fileRows: data.fileRows || [],
+            });
 
-            banner.classList.remove('d-none');
-            document.getElementById('resumeBannerText').textContent =
-                (finished ? 'Finished run: ' : 'Unfinished run: ') + job.fileName +
-                ' — ' + state.done + ' of ' + state.total + ' checked · ' + BulkJob.describe(job);
+            job.serverJobId = id;
+            job.fileName = data.fileName || job.fileName;
+            if (Array.isArray(data.emails) && data.emails.length) job.emails = data.emails;
+            if (Array.isArray(data.fileRows) && data.fileRows.length) job.fileRows = data.fileRows;
+            job.verifyMap = job.verifyMap || {};
+            (data.results || []).forEach(row => { job.verifyMap[row.email] = row; });
+            job.resultCount = (data.results || []).length;
+            job.total = data.total;
+            job.status = data.status === 'done' ? 'done' : (data.status === 'cancelled' ? 'paused' : 'running');
 
-            const resume = document.getElementById('resumeJobBtn');
-            resume.textContent = finished ? 'Show results' : 'Resume';
-            resume.onclick = () => {
-                dismissBanner();
-                if (finished) {
-                    showResults(job);
+            serverJobId = id;
+            pollIndex = job.resultCount;
+            currentJob = job;
+            jobRunning = false;
+
+            showResults(job);
+            progressArea.classList.remove('d-none');
+            progressText.textContent = data.done + ' / ' + data.total;
+
+            if (data.status === 'done' || data.status === 'cancelled' || data.status === 'error') {
+                BulkJob.saveBulkJob(job);
+                setControlState(data.status === 'done' ? 'done' : 'paused');
+                return true;
+            }
+
+            BulkJob.saveBulkJob(job);
+            runControl.paused = data.status === 'paused';
+            setControlState(data.status === 'paused' ? 'paused' : 'running');
+            if (data.status !== 'paused') startPolling();
+            return true;
+        }
+
+        async function restoreOnLoad() {
+            try {
+                // 1. the run this browser was last attached to
+                const saved = BulkJob.loadBulkJob();
+                if (saved && saved.serverJobId) {
+                    try {
+                        await attachToJob(saved.serverJobId, saved);
+                        return;
+                    } catch (_) { /* job gone: fall through */ }
+                }
+
+                // 2. any active run on the server (new browser, other device)
+                const { data: jobs } = await axios.get('/api/verify/jobs');
+                const list = Array.isArray(jobs) ? jobs : [];
+                const active = list.find(job => ['queued', 'running', 'paused'].includes(job.status));
+                if (active) {
+                    await attachToJob(active.id);
                     return;
                 }
-                if (job.serverJobId) {
-                    watchServerJob(job);        // server kept working; just reattach
-                    return;
-                }
-                runVerificationLoop(job);
-            };
 
-            const discard = document.getElementById('discardJobBtn');
-            if (discard) {
-                discard.onclick = () => {
-                    BulkJob.clear();
-                    currentJob = null;
-                    results = [];
-                    fileRows = [];
-                    document.getElementById('resultsTableBody').innerHTML = '';
-                    document.getElementById('resultsTableSection').classList.add('d-none');
-                    progressArea.classList.add('d-none');
-                    document.getElementById('fileNameDisplay').classList.add('d-none');
-                    dismissBanner();
-                    showToast('Saved run discarded', 'info');
-                };
+                // 3. last finished run, so the page is not empty
+                const finished = list.find(job => job.status === 'done' || job.status === 'cancelled');
+                if (finished) await attachToJob(finished.id);
+            } catch (error) {
+                // offline or not logged in — leave the page alone
             }
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            const saved = BulkJob.loadBulkJob();
-            if (saved) offerSavedRun(saved);
-        });
+        document.addEventListener('DOMContentLoaded', restoreOnLoad);
 
         // Leaving the page pauses the run instead of leaving it marked "running",
         // so a refresh can only ever offer to continue.
@@ -424,22 +331,6 @@ const uploadForm    = document.getElementById('uploadForm');
             else if (status === 'error') showToast('Server run failed: ' + (error || 'unknown'), 'error');
         }
 
-        function restartRun() {
-            const job = currentJob;
-            if (!job) return;
-            job.verifyMap = {};
-            job.results = [];
-            job.completedCount = 0;
-            job.savedToServer = false;
-            job.stats = { valid: 0, invalid: 0, disposable: 0, noSmtp: 0, risky: 0, catchAll: 0, completed: 0 };
-            results = [];
-            rowIndex = 0;
-            document.getElementById('resultsTableBody').innerHTML = '';
-            document.getElementById('resultsTableSection').classList.remove('d-none');
-            BulkJob.clear();
-            runVerificationLoop(job);
-        }
-
         function clearEverything() {
             BulkJob.clear();
             stopPolling();
@@ -504,18 +395,19 @@ const uploadForm    = document.getElementById('uploadForm');
         restartBtn?.addEventListener('click', async () => {
             if (jobRunning || !currentJob) return;
             if (!window.confirm('Restart this run from the beginning? Every result for this file is cleared and checked again.')) return;
+
+            const emails = currentJob.emails || [];
+            const rows = currentJob.fileRows || [];
+            const name = currentJob.fileName || 'Uploaded file';
+
             if (currentJob.serverJobId) {
                 try { await axios.post('/api/verify/jobs/' + currentJob.serverJobId + '/cancel'); } catch (_) { /* ignore */ }
-                stopPolling();
-                serverJobId = null;
-                const emails = currentJob.emails || [];
-                const rows = currentJob.fileRows || [];
-                const name = currentJob.fileName || 'Uploaded file';
-                BulkJob.clear();
-                await startServerJob(name, emails, rows);
-                return;
             }
-            restartRun();
+            stopPolling();
+            serverJobId = null;
+            pollIndex = 0;
+            BulkJob.clear();
+            await startServerJob(name, emails, rows);
         });
 
         clearBtn?.addEventListener('click', async () => {
@@ -656,18 +548,7 @@ const uploadForm    = document.getElementById('uploadForm');
                 updateFileDisplay(file.name);
                 showToast(`Found ${emails.length} unique emails (${fileRows.length} rows). Verifying...`, 'info');
 
-                if (document.getElementById('runOnServer') && document.getElementById('runOnServer').checked) {
-                    await startServerJob(file.name, emails, fileRows);
-                    return;
-                }
-
-                const job = BulkJob.create({ fileName: file.name, emails: emails, fileRows: fileRows });
-                job.status = 'running';
-                job.results = [];
-                job.stats = { valid: 0, invalid: 0, disposable: 0, noSmtp: 0, risky: 0, catchAll: 0, completed: 0 };
-                currentJob = job;
-                BulkJob.saveBulkJob(job);
-                await runVerificationLoop(job);
+                await startServerJob(file.name, emails, fileRows);
             } catch (err) {
                 showToast(err.response?.data?.message || 'Upload failed', 'error');
                 resetUI();

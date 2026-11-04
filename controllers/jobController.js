@@ -43,7 +43,7 @@ const getJob = async (req, res) => {
         if (!job) return res.status(404).json({ message: 'Job not found' });
 
         const since = Math.max(0, parseInt(req.query.since || '0', 10) || 0);
-        res.json({
+        const payload = {
             id: String(job._id),
             fileName: job.fileName,
             status: job.status,
@@ -52,7 +52,14 @@ const getJob = async (req, res) => {
             error: job.error || '',
             results: (job.results || []).slice(since),
             nextIndex: (job.results || []).length,
-        });
+        };
+        // First call also hands back the list, so a fresh browser can rebuild
+        // the table exactly as it was.
+        if (since === 0) {
+            payload.emails = job.emails || [];
+            payload.fileRows = job.fileRows || [];
+        }
+        res.json(payload);
     } catch (error) {
         res.status(500).json({ message: 'Could not load the job', error: error.message });
     }
