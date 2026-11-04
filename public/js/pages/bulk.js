@@ -280,10 +280,17 @@ const uploadForm    = document.getElementById('uploadForm');
         async function startServerJob(fileName, emails, rows) {
             const job = BulkJob.create({ fileName: fileName, emails: emails, fileRows: rows });
             try {
+                // Very wide files can push the payload past the body limit; the
+                // original columns are only used for the CSV, so drop them before
+                // the request rather than losing the run.
+                let fileRows = rows;
+                const probe = JSON.stringify({ fileName: fileName, emails: emails, fileRows: fileRows });
+                if (probe.length > 8 * 1024 * 1024) fileRows = [];
+
                 const { data } = await axios.post('/api/verify/jobs', {
                     fileName: fileName,
                     emails: emails,
-                    fileRows: rows,
+                    fileRows: fileRows,
                 });
                 job.serverJobId = data.id;
                 job.status = 'running';
@@ -300,7 +307,11 @@ const uploadForm    = document.getElementById('uploadForm');
                 startPolling();
                 showToast('Run started on the server — you can close this tab', 'success');
             } catch (error) {
-                showToast((error.response && error.response.data && error.response.data.message) || 'Could not start the server run', 'error');
+                const status = error.response && error.response.status;
+                const message = status === 413
+                    ? 'That list is too large to send in one request. Split the file and try again.'
+                    : ((error.response && error.response.data && error.response.data.message) || 'Could not start the server run');
+                showToast(message, 'error');
                 resetUI();
             }
         }
@@ -550,7 +561,11 @@ const uploadForm    = document.getElementById('uploadForm');
 
                 await startServerJob(file.name, emails, fileRows);
             } catch (err) {
-                showToast(err.response?.data?.message || 'Upload failed', 'error');
+                const status = err.response && err.response.status;
+                const message = status === 413
+                    ? 'That file is too large to upload. Split it into smaller files.'
+                    : (err.response?.data?.message || 'Upload failed');
+                showToast(message, 'error');
                 resetUI();
             }
         });
