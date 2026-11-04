@@ -42,6 +42,9 @@ async function start() {
     console.log('🔧 Starting truemail-go verifier (required)...');
     await ensureGoVerifier();
 
+    // Server-side bulk runs keep going after the browser closes.
+    require('./utils/jobRunner').start();
+
     app.listen(PORT, () => {
         console.log(`Server running on port ${PORT}`);
         console.log(`Open http://localhost:${PORT}`);

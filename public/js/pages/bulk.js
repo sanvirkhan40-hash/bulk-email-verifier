@@ -288,6 +288,10 @@ const uploadForm    = document.getElementById('uploadForm');
                     showResults(job);
                     return;
                 }
+                if (job.serverJobId) {
+                    watchServerJob(job);        // server kept working; just reattach
+                    return;
+                }
                 runVerificationLoop(job);
             };
 
@@ -324,6 +328,102 @@ const uploadForm    = document.getElementById('uploadForm');
             }
         });
 
+        /* ── Server-side runs (keep going after the tab closes) ── */
+        let serverJobId = null;
+        let pollTimer = null;
+        let pollIndex = 0;
+        let pollBusy = false;
+
+        function stopPolling() {
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = null;
+            pollBusy = false;
+        }
+
+        function startPolling() {
+            stopPolling();
+            pollTimer = setInterval(pollServerJob, 2500);
+            pollServerJob();
+        }
+
+        async function pollServerJob() {
+            if (!serverJobId || pollBusy || !currentJob) return;
+            pollBusy = true;
+            try {
+                const { data } = await axios.get('/api/verify/jobs/' + serverJobId + '?since=' + pollIndex);
+                (data.results || []).forEach(row => { currentJob.verifyMap[row.email] = row; });
+                pollIndex += (data.results || []).length;
+                currentJob.resultCount = pollIndex;
+                currentJob.total = data.total;
+                syncResultsUI(currentJob);
+                BulkJob.saveBulkJob(currentJob);
+                progressText.textContent = data.done + ' / ' + data.total + ' (server)';
+
+                if (data.status === 'done') finishServerRun('done');
+                else if (data.status === 'cancelled') finishServerRun('cancelled');
+                else if (data.status === 'error') finishServerRun('error', data.error);
+                else if (data.status === 'paused') setControlState('paused');
+            } catch (error) {
+                // A network blip must not end the run — the server keeps working.
+            } finally {
+                pollBusy = false;
+            }
+        }
+
+        async function startServerJob(fileName, emails, rows) {
+            const job = BulkJob.create({ fileName: fileName, emails: emails, fileRows: rows });
+            try {
+                const { data } = await axios.post('/api/verify/jobs', {
+                    fileName: fileName,
+                    emails: emails,
+                    fileRows: rows,
+                });
+                job.serverJobId = data.id;
+                job.status = 'running';
+                job.resultCount = 0;
+                serverJobId = data.id;
+                pollIndex = 0;
+                currentJob = job;
+                jobRunning = false;             // the server owns the work
+                BulkJob.setActive(false);
+                showResults(job);
+                setControlState('running');
+                progressText.textContent = '0 / ' + data.total + ' (server)';
+                BulkJob.saveBulkJob(job);
+                startPolling();
+                showToast('Run started on the server — you can close this tab', 'success');
+            } catch (error) {
+                showToast((error.response && error.response.data && error.response.data.message) || 'Could not start the server run', 'error');
+                resetUI();
+            }
+        }
+
+        function watchServerJob(job) {
+            serverJobId = job.serverJobId;
+            pollIndex = Number(job.resultCount || 0);
+            currentJob = job;
+            showResults(job);
+            setControlState('running');
+            startPolling();
+        }
+
+        function finishServerRun(status, error) {
+            stopPolling();
+            if (currentJob) {
+                currentJob.status = status === 'done' ? 'done' : 'paused';
+                if (status === 'done') currentJob.savedToServer = true;   // history already written
+                BulkJob.saveBulkJob(currentJob);
+            }
+            exportBtn.classList.remove('d-none');
+            exportValidBtn.classList.remove('d-none');
+            uploadBtn.disabled = false;
+            fileInput.disabled = false;
+            setControlState(status === 'done' ? 'done' : 'paused');
+            if (status === 'done') showToast('Server run finished', 'success');
+            else if (status === 'cancelled') showToast('Server run cancelled', 'info');
+            else if (status === 'error') showToast('Server run failed: ' + (error || 'unknown'), 'error');
+        }
+
         function restartRun() {
             const job = currentJob;
             if (!job) return;
@@ -342,6 +442,9 @@ const uploadForm    = document.getElementById('uploadForm');
 
         function clearEverything() {
             BulkJob.clear();
+            stopPolling();
+            serverJobId = null;
+            pollIndex = 0;
             currentJob = null;
             results = [];
             fileRows = [];
@@ -359,14 +462,38 @@ const uploadForm    = document.getElementById('uploadForm');
             showToast('Cleared', 'info');
         }
 
-        pauseBtn?.addEventListener('click', () => {
+        pauseBtn?.addEventListener('click', async () => {
+            if (serverJobId) {
+                try {
+                    const next = !runControl.paused;
+                    await axios.post('/api/verify/jobs/' + serverJobId + (next ? '/pause' : '/resume'));
+                    runControl.paused = next;
+                    setControlState(next ? 'paused' : 'running');
+                    progressText.textContent = next ? 'Paused (server)' : 'Resumed (server)';
+                    if (next) stopPolling();
+                    else startPolling();
+                } catch (error) {
+                    showToast('Could not change the server run', 'error');
+                }
+                return;
+            }
             if (!jobRunning) return;
             runControl.paused = !runControl.paused;
             setControlState(runControl.paused ? 'paused' : 'running');
             progressText.textContent = runControl.paused ? 'Paused' : 'Resumed';
         });
 
-        stopBtn?.addEventListener('click', () => {
+        stopBtn?.addEventListener('click', async () => {
+            if (serverJobId) {
+                if (!window.confirm('Stop the server run? Addresses already checked are kept.')) return;
+                try {
+                    await axios.post('/api/verify/jobs/' + serverJobId + '/cancel');
+                    finishServerRun('cancelled');
+                } catch (error) {
+                    showToast('Could not cancel the server run', 'error');
+                }
+                return;
+            }
             if (!jobRunning) return;
             if (!window.confirm('Stop this run? Addresses already checked are kept — you can resume or restart later.')) return;
             runControl.stopped = true;
@@ -374,15 +501,31 @@ const uploadForm    = document.getElementById('uploadForm');
             progressText.textContent = 'Stopping…';
         });
 
-        restartBtn?.addEventListener('click', () => {
+        restartBtn?.addEventListener('click', async () => {
             if (jobRunning || !currentJob) return;
             if (!window.confirm('Restart this run from the beginning? Every result for this file is cleared and checked again.')) return;
+            if (currentJob.serverJobId) {
+                try { await axios.post('/api/verify/jobs/' + currentJob.serverJobId + '/cancel'); } catch (_) { /* ignore */ }
+                stopPolling();
+                serverJobId = null;
+                const emails = currentJob.emails || [];
+                const rows = currentJob.fileRows || [];
+                const name = currentJob.fileName || 'Uploaded file';
+                BulkJob.clear();
+                await startServerJob(name, emails, rows);
+                return;
+            }
             restartRun();
         });
 
-        clearBtn?.addEventListener('click', () => {
+        clearBtn?.addEventListener('click', async () => {
             if (jobRunning) return;
             if (!window.confirm('Clear this run and all of its results?')) return;
+            if (serverJobId) {
+                try { await axios.post('/api/verify/jobs/' + serverJobId + '/cancel'); } catch (_) { /* ignore */ }
+                stopPolling();
+                serverJobId = null;
+            }
             clearEverything();
         });
 
@@ -512,6 +655,11 @@ const uploadForm    = document.getElementById('uploadForm');
 
                 updateFileDisplay(file.name);
                 showToast(`Found ${emails.length} unique emails (${fileRows.length} rows). Verifying...`, 'info');
+
+                if (document.getElementById('runOnServer') && document.getElementById('runOnServer').checked) {
+                    await startServerJob(file.name, emails, fileRows);
+                    return;
+                }
 
                 const job = BulkJob.create({ fileName: file.name, emails: emails, fileRows: fileRows });
                 job.status = 'running';
