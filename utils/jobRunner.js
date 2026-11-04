@@ -106,14 +106,18 @@ async function finish(job) {
 
     await VerifyJob.updateOne({ _id: job._id }, { $set: { status: 'done', finishedAt: new Date() } });
 
-    // Same history entry the browser-side run used to create.
+    // Same history entry the browser-side run used to create, with the original
+    // spreadsheet columns joined back in when the job still has them.
     try {
+        const originalByEmail = new Map(
+            (fresh.fileRows || []).map(row => [String(row.email || '').toLowerCase(), row.originalRow || []]),
+        );
         await BulkJob.create({
             user: fresh.user,
             fileName: fresh.fileName,
             rows: results.map(r => ({
                 email: r.email,
-                originalRow: [],
+                originalRow: originalByEmail.get(String(r.email).toLowerCase()) || [],
                 valid: r.valid,
                 domain_valid: r.domain_valid,
                 mailbox_verified: r.mailbox_verified,

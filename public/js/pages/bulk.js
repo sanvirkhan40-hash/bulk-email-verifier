@@ -101,7 +101,8 @@ const uploadForm    = document.getElementById('uploadForm');
             const stats = { valid: 0, invalid: 0, disposable: 0, noSmtp: 0, risky: 0, catchAll: 0, completed: 0 };
 
             rows.forEach(row => {
-                const v = map[row.email];
+                const key = String(row.email || '');
+                const v = map[key] || map[key.toLowerCase()];
                 if (!v) return;
                 const item = {
                     email: row.email,
@@ -280,7 +281,16 @@ const uploadForm    = document.getElementById('uploadForm');
                 else if (data.status === 'error') finishServerRun('error', data.error);
                 else if (data.status === 'paused') setControlState('paused');
             } catch (error) {
-                // A network blip must not end the run — the server keeps working.
+                // A job deleted here or on another device: stop watching it.
+                if (error.response && error.response.status === 404) {
+                    stopPolling();
+                    serverJobId = null;
+                    BulkJob.clear();
+                    currentJob = null;
+                    progressArea.classList.add('d-none');
+                    document.getElementById('resultsTableSection').classList.add('d-none');
+                    setControlState('idle');
+                }
             } finally {
                 pollBusy = false;
             }
@@ -549,6 +559,7 @@ const uploadForm    = document.getElementById('uploadForm');
             results = [];
             fileRows = [];
 
+            uploadBtn.disabled = true;
             const formData = new FormData();
             formData.append('file', file);
 
@@ -569,7 +580,16 @@ const uploadForm    = document.getElementById('uploadForm');
                 updateFileDisplay(file.name);
                 showToast(`Found ${emails.length} unique emails (${fileRows.length} rows). Verifying...`, 'info');
 
-                await startServerJob(file.name, emails, fileRows);
+                // One row per unique address, in the same order as `emails`, so the
+                // server can pair them safely.
+                const byEmail = new Map();
+                fileRows.forEach(row => {
+                    const key = String(row.email || '').toLowerCase();
+                    if (key && !byEmail.has(key)) byEmail.set(key, row);
+                });
+                const aligned = emails.map(email => byEmail.get(String(email).toLowerCase()) || { email: email, originalRow: [] });
+
+                await startServerJob(file.name, emails, aligned);
             } catch (err) {
                 const status = err.response && err.response.status;
                 const message = status === 413

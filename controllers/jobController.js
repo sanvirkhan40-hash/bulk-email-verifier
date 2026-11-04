@@ -10,24 +10,50 @@ const createJob = async (req, res) => {
         if (!Array.isArray(emails) || !emails.length) {
             return res.status(400).json({ message: 'emails must be a non-empty array' });
         }
-        if (emails.length > MAX_EMAILS) {
-            return res.status(400).json({ message: `Too many addresses (${emails.length}). Limit is ${MAX_EMAILS} per run.` });
-        }
 
-        const clean = emails
-            .map(email => String(email || '').trim().toLowerCase())
-            .filter(email => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email));
+        // Emails and their original spreadsheet rows are paired by position, so
+        // they are filtered together — otherwise a duplicate or invalid address
+        // shifts every row after it and the table shows the wrong columns.
+        const pairs = [];
+        const seen = new Set();
+        const incomingRows = Array.isArray(fileRows) ? fileRows : [];
 
-        if (!clean.length) {
+        emails.forEach((raw, index) => {
+            const email = String(raw || '').trim().toLowerCase();
+            if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return;
+            if (seen.has(email)) return;
+            seen.add(email);
+            pairs.push({ email, row: incomingRows[index] || { email } });
+        });
+
+        if (!pairs.length) {
             return res.status(400).json({ message: 'No valid addresses in the list' });
         }
+        if (pairs.length > MAX_EMAILS) {
+            return res.status(400).json({ message: `Too many addresses (${pairs.length}). Limit is ${MAX_EMAILS} per run.` });
+        }
+
+        // One run at a time: a second job would sit behind the first and the page
+        // could only watch one of them.
+        const active = await VerifyJob.findOne({
+            user: req.user._id,
+            status: { $in: ['queued', 'running', 'paused'] },
+        }).select('_id').lean();
+        if (active) {
+            return res.status(409).json({ message: 'A run is already in progress. Finish or clear it first.' });
+        }
+
+        // Mongo documents cap at 16 MB; the original columns are only needed for
+        // the CSV export, so drop them rather than fail the whole run.
+        let rows = pairs.map(pair => pair.row);
+        if (Buffer.byteLength(JSON.stringify(rows)) > 4 * 1024 * 1024) rows = [];
 
         const job = await VerifyJob.create({
             user: req.user._id,
             fileName: fileName || 'Uploaded file',
-            emails: clean,
-            fileRows: Array.isArray(fileRows) ? fileRows.slice(0, clean.length) : [],
-            total: clean.length,
+            emails: pairs.map(pair => pair.email),
+            fileRows: rows,
+            total: pairs.length,
         });
 
         res.status(201).json({ id: job._id, total: job.total, status: job.status });
