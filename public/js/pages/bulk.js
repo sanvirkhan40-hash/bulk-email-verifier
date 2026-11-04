@@ -210,13 +210,13 @@ const uploadForm    = document.getElementById('uploadForm');
                 const list = Array.isArray(jobs) ? jobs : [];
                 const active = list.find(job => ['queued', 'running', 'paused'].includes(job.status));
                 if (active) {
-                    await attachToJob(active.id);
+                    await attachToJob(active.id || active._id);
                     return;
                 }
 
                 // 3. last finished run, so the page is not empty
                 const finished = list.find(job => job.status === 'done' || job.status === 'cancelled');
-                if (finished) await attachToJob(finished.id);
+                if (finished) await attachToJob(finished.id || finished._id);
             } catch (error) {
                 // offline or not logged in — leave the page alone
             }

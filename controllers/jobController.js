@@ -89,8 +89,18 @@ const listJobs = async (req, res) => {
         const jobs = await VerifyJob.find({ user: req.user._id })
             .sort({ createdAt: -1 })
             .limit(20)
-            .select('fileName status total done createdAt finishedAt');
-        res.json(jobs);
+            .select('fileName status total done createdAt finishedAt')
+            .lean();
+        // The client needs a plain `id`; Mongo documents only carry `_id`.
+        res.json(jobs.map(job => ({
+            id: String(job._id),
+            fileName: job.fileName,
+            status: job.status,
+            total: job.total,
+            done: job.done,
+            createdAt: job.createdAt,
+            finishedAt: job.finishedAt,
+        })));
     } catch (error) {
         res.status(500).json({ message: 'Could not list jobs', error: error.message });
     }
