@@ -25,5 +25,6 @@ router.get('/jobs/:id', protect, jobs.getJob);
 router.post('/jobs/:id/pause', protect, jobs.pauseJob);
 router.post('/jobs/:id/resume', protect, jobs.resumeJob);
 router.post('/jobs/:id/cancel', protect, jobs.cancelJob);
+router.delete('/jobs/:id', protect, jobs.deleteJob);
 
 module.exports = router;

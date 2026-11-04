@@ -83,6 +83,17 @@ const pauseJob = (req, res) => setStatus(req, res, ['queued', 'running'], 'pause
 const resumeJob = (req, res) => setStatus(req, res, ['paused', 'error'], 'queued', 'Resume');
 const cancelJob = (req, res) => setStatus(req, res, ['queued', 'running', 'paused'], 'cancelled', 'Cancel');
 
+// @desc   Remove a job entirely (Clear). Other devices then see nothing at all.
+const deleteJob = async (req, res) => {
+    try {
+        const result = await VerifyJob.deleteOne({ _id: req.params.id, user: req.user._id });
+        if (!result.deletedCount) return res.status(404).json({ message: 'Job not found' });
+        res.json({ deleted: true });
+    } catch (error) {
+        res.status(500).json({ message: 'Could not delete the job', error: error.message });
+    }
+};
+
 // @desc   Most recent server-side runs for this user
 const listJobs = async (req, res) => {
     try {
@@ -106,4 +117,4 @@ const listJobs = async (req, res) => {
     }
 };
 
-module.exports = { createJob, getJob, pauseJob, resumeJob, cancelJob, listJobs };
+module.exports = { createJob, getJob, pauseJob, resumeJob, cancelJob, deleteJob, listJobs };

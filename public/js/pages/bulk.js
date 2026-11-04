@@ -194,7 +194,11 @@ const uploadForm    = document.getElementById('uploadForm');
             return true;
         }
 
+        let restoring = false;
+
         async function restoreOnLoad() {
+            if (restoring) return;
+            restoring = true;
             try {
                 // 1. the run this browser was last attached to
                 const saved = BulkJob.loadBulkJob();
@@ -202,7 +206,10 @@ const uploadForm    = document.getElementById('uploadForm');
                     try {
                         await attachToJob(saved.serverJobId, saved);
                         return;
-                    } catch (_) { /* job gone: fall through */ }
+                    } catch (reason) {
+                        // The job was cleared elsewhere: forget the local copy.
+                        BulkJob.clear();
+                    }
                 }
 
                 // 2. any active run on the server (new browser, other device)
@@ -219,6 +226,8 @@ const uploadForm    = document.getElementById('uploadForm');
                 if (finished) await attachToJob(finished.id || finished._id);
             } catch (error) {
                 // offline or not logged in — leave the page alone
+            } finally {
+                restoring = false;
             }
         }
 
@@ -425,7 +434,8 @@ const uploadForm    = document.getElementById('uploadForm');
             if (jobRunning) return;
             if (!window.confirm('Clear this run and all of its results?')) return;
             if (serverJobId) {
-                try { await axios.post('/api/verify/jobs/' + serverJobId + '/cancel'); } catch (_) { /* ignore */ }
+                try { await axios.delete('/api/verify/jobs/' + serverJobId); }
+                catch (_) { try { await axios.post('/api/verify/jobs/' + serverJobId + '/cancel'); } catch (__) { /* ignore */ } }
                 stopPolling();
                 serverJobId = null;
             }
