@@ -98,8 +98,10 @@
                     </div>
                     <div class="card-body">
                         <p class="small text-muted mb-4">
-                            <b>Global per second</b> is one shared speed for everything. <b>Global per minute / per day</b> are each Reacher's own budget — reach the minute cap and checks move to the next Reacher, reach the daily cap and that Reacher rests until tomorrow (UTC).
-                            <b>Provider rows</b> cap that provider across all backends. 0 means no limit.
+                            <b>Global per second</b> is the pace of each Reacher. <b>Global per minute / per day</b> are each Reacher's own budget — with three active Reachers every limit is counted three times, so the run moves three times faster. Reach a cap on one Reacher and it rests until it frees up, while the others keep working.
+                        </p>
+                        <p class="small text-muted mb-4">
+                            <b>Provider rows</b> are per Reacher too: Gmail 1 per minute means each active Reacher may check one Gmail address per minute. 0 means no limit.
                         </p>
 
                         <div class="grid cols-4 mb-4">

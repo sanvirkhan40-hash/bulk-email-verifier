@@ -63,53 +63,42 @@ function num(value, fallback) {
 // Effective limits for one backend. Setting ANY value on the backend makes it
 // ignore the global row completely (unset pieces then mean "unlimited" for that
 // backend). With nothing set, it follows the global row.
-function effectiveLimits(backend, settings) {
+// Limits are per Reacher: with three active backends, "1 per minute" means one
+// check per minute *each*, so the run moves three times faster. A backend's own
+// numbers replace the global ones; its provider rows replace the provider rows.
+function limitsFor(backend, provider, settings) {
     const own = backend.limits || {};
     const has = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
 
-    // A provider row refines the Overall row for that provider only.
-    const providerLimits = {};
-    for (const name of ['gmail', 'yahoo', 'microsoft', 'other']) {
-        const row = (own.providers && own.providers[name]) || {};
-        if (!['perSecond', 'perMinute', 'perDay'].some(key => has(row[key]))) continue;
-        providerLimits[name] = {
-            perSecond: has(row.perSecond) ? Math.max(0, Number(row.perSecond)) : 0,
-            perMinute: has(row.perMinute) ? Math.max(0, Number(row.perMinute)) : 0,
-            perDay: has(row.perDay) ? Math.max(0, Number(row.perDay)) : 0,
-        };
-    }
+    const providerRows = own.providers || {};
+    const anyOwn = ['perSecond', 'perMinute', 'perDay'].some(key => has(own[key]))
+        || Object.keys(providerRows).some(name => ['perSecond', 'perMinute', 'perDay'].some(key => has((providerRows[name] || {})[key])));
 
-    const overridden = ['perSecond', 'perMinute', 'perDay'].some(key => has(own[key]))
-        || Object.keys(providerLimits).length > 0;
-
-    if (overridden) {
-        return {
+    const general = anyOwn
+        ? {
             perSecond: has(own.perSecond) ? Math.max(0, Number(own.perSecond)) : 0,
             perMinute: has(own.perMinute) ? Math.max(0, Number(own.perMinute)) : 0,
             perDay: has(own.perDay) ? Math.max(0, Number(own.perDay)) : 0,
-            providerLimits,
-            overridden: true,
+        }
+        : {
+            perSecond: Math.max(0, num(settings?.globalPerSecond, 1)),
+            perMinute: Math.max(0, num(settings?.globalPerMinute, 60)),
+            perDay: Math.max(0, num(settings?.globalPerDay, 5000)),
         };
-    }
-    return {
-        perSecond: Math.max(0, num(settings?.globalPerSecond, 1)),
-        perMinute: Math.max(0, num(settings?.globalPerMinute, 60)),
-        perDay: Math.max(0, num(settings?.globalPerDay, 5000)),
-        providerLimits: {},
-        overridden: false,
+
+    const row = providerRows[provider] || {};
+    const providerLimit = {
+        perSecond: has(row.perSecond) ? Math.max(0, Number(row.perSecond)) : Math.max(0, num(settings?.providerPerSecond?.[provider], 0)),
+        perMinute: has(row.perMinute) ? Math.max(0, Number(row.perMinute)) : Math.max(0, num(settings?.providerPerMinute?.[provider], 0)),
+        perDay: has(row.perDay) ? Math.max(0, Number(row.perDay)) : Math.max(0, num(settings?.providerPerDay?.[provider], 0)),
     };
+
+    return { general, provider: providerLimit };
 }
 
-// Backends that follow the global row share ONE per-second clock (so two
-// Reachers do not double the rate). An overridden backend paces itself.
-const sharedSecond = { secLast: 0 };
-// Backends without their own limits also share one minute/day budget, so
-// "1 per minute" means one check per minute in total, not one per backend.
-const sharedBudget = newWindow();
 const ownSeconds = new Map();
 
-function secondsState(backend, limits) {
-    if (!limits.overridden) return sharedSecond;
+function secondsState(backend) {
     if (!ownSeconds.has(backend.id)) ownSeconds.set(backend.id, { secLast: 0 });
     return ownSeconds.get(backend.id);
 }
@@ -140,43 +129,28 @@ function commitStart(state, now) {
     state.dayCount += 1;
 }
 
-// A backend is usable when its per-second clock, per-minute budget and daily
-// budget all allow another start.
+// Usable when this Reacher's own pace AND this provider's pace on this Reacher
+// both allow another start.
 function backendWait(backend, provider, now, settings) {
-    const limits = effectiveLimits(backend, settings);
+    const limits = limitsFor(backend, provider, settings);
     const entry = usageEntry(backend.id);
+    const providerState = entry.providers[provider] || (entry.providers[provider] = newWindow());
 
-    const budget = limits.overridden ? entry.global : sharedBudget;
-
-    let wait = Math.max(
-        secondWait(secondsState(backend, limits), limits.perSecond, now),
-        minuteWait(budget, limits.perMinute, now),
-        dayWait(budget, limits.perDay, now),
+    return Math.max(
+        secondWait(secondsState(backend), limits.general.perSecond, now),
+        minuteWait(entry.global, limits.general.perMinute, now),
+        dayWait(entry.global, limits.general.perDay, now),
+        secondWait(providerState, limits.provider.perSecond, now),
+        minuteWait(providerState, limits.provider.perMinute, now),
+        dayWait(providerState, limits.provider.perDay, now),
     );
-
-    // A provider row on this backend is an extra cap on top of its Overall row.
-    const own = limits.providerLimits[provider];
-    if (own) {
-        const state = entry.providers[provider] || (entry.providers[provider] = newWindow());
-        wait = Math.max(
-            wait,
-            secondWait(state, own.perSecond, now),
-            minuteWait(state, own.perMinute, now),
-            dayWait(state, own.perDay, now),
-        );
-    }
-    return wait;
 }
 
-function recordStart(backend, provider, now, settings) {
-    const limits = effectiveLimits(backend, settings);
+function recordStart(backend, provider, now) {
     const entry = usageEntry(backend.id);
-    secondsState(backend, limits).secLast = now;
-    // Always count per backend for the usage display, but only charge the shared
-    // budget when this backend is not running on its own numbers.
     commitStart(entry.global, now);
-    if (!limits.overridden) commitStart(sharedBudget, now);
     commitStart(entry.providers[provider] || (entry.providers[provider] = newWindow()), now);
+    secondsState(backend).secLast = now;
 }
 
 function getBackendUsage(id) {
@@ -462,5 +436,5 @@ module.exports = {
     normalizeUrl,
     getBackendUsage,
     getAllUsage,
-    effectiveLimits,
+    limitsFor,
 };

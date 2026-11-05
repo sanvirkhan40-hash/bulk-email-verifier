@@ -172,15 +172,11 @@ function commitStart(scope, now) {
     state.dayCount += 1;
 }
 
-function providerLimits(settings, provider) {
-    // Only provider gates live here. The global row is enforced per backend by
-    // the Reacher pool (each backend may override it), so applying it here too
-    // would double-count it.
-    return {
-        perSecond: settings.providerPerSecond?.[provider],
-        perMinute: settings.providerPerMinute?.[provider],
-        perDay: settings.providerPerDay?.[provider],
-    };
+function providerLimits() {
+    // Pacing (the global row and the provider rows) is enforced per Reacher by
+    // the pool. A gate here would cap the whole run no matter how many backends
+    // are active, which is exactly what we do not want.
+    return { perSecond: 0, perMinute: 0, perDay: 0 };
 }
 
 // Providers are served round-robin so a long run of one provider never starves
