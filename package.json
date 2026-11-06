@@ -1,17 +1,15 @@
 {
   "name": "@mafzalkalwardev/bulk-email-verifier",
   "version": "1.0.0",
-  "description": "Self-hosted bulk email verifier — truemail-go SMTP + Node.js UI",
+  "description": "Self-hosted bulk email verifier — Reacher backends + Node.js UI",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "start:go": "cd backend/go && go run main.go",
     "start:reacher": "docker compose up -d",
     "stop:reacher": "docker compose down",
     "start:all": "powershell -ExecutionPolicy Bypass -File scripts/start-all.ps1",
-    "setup:go": "cd backend/go && go mod tidy",
-    "setup": "npm install && npm run setup:go"
+    "setup": "npm install"
   },
   "keywords": [
     "email",

@@ -1,13 +1,11 @@
 const axios = require('axios');
 const { mapReacherToReport, checkReacherHealth, REACHER_BASE } = require('./reacherClient');
 const microsoftAccount = require('./microsoftAccount');
-const { ensureGoVerifier } = require('./spawnGo');
 const reacherPool = require('./reacherPool');
 const { providerFor } = require('./verificationLimiter');
 
-const GO_BASE = process.env.GO_VERIFIER_URL || 'http://localhost:8080';
-const ENGINE_MODE = (process.env.VERIFIER_ENGINE || 'truemail').toLowerCase();
 const REACHER_TIMEOUT = parseInt(process.env.REACHER_TIMEOUT_MS || '45000', 10);
+// truemail-go is disabled for good: every check goes through a Reacher backend.
 
 let cachedEngine = null;
 
@@ -51,12 +49,6 @@ function getEngineUsage() {
     return JSON.parse(JSON.stringify(engineUsage));
 }
 
-async function verifyWithGo(email) {
-    const url = `${GO_BASE}/v1/${encodeURIComponent(email)}/verification`;
-    const { data } = await axios.get(url, { timeout: 120000 });
-    return { ...data, engine: data.engine || 'truemail-go', engine_backend: 'truemail-go' };
-}
-
 function mapStatus(report) {
     if (report.valid) return 'valid';
     if (report.misc?.disposable) return 'disposable';
@@ -91,52 +83,11 @@ function wrapResult(report, email) {
     };
 }
 
-async function isTruemailUp() {
-    try {
-        const { data } = await axios.get(`${GO_BASE}/health`, { timeout: 3000 });
-        return data?.status === 'ok';
-    } catch (_) {
-        return false;
-    }
-}
-
-async function ensureTruemailReady() {
-    if (!(await isTruemailUp())) {
-        await ensureGoVerifier();
-        for (let i = 0; i < 15; i++) {
-            if (await isTruemailUp()) return true;
-            await new Promise(r => setTimeout(r, 1000));
-        }
-    }
-    return isTruemailUp();
-}
-
 async function resolveEngine() {
-    // Default & auto: truemail-go only (fast, works on Gmail in ~15s)
-    if (ENGINE_MODE === 'truemail' || ENGINE_MODE === 'auto') {
-        if (await ensureTruemailReady()) {
-            cachedEngine = 'truemail-go';
-            return 'truemail-go';
-        }
-        throw new Error('truemail-go not running. Restart with: npm start');
-    }
-
-    if (ENGINE_MODE === 'reacher') {
-        if (await checkReacherHealth()) {
-            cachedEngine = 'reacher';
-            return 'reacher';
-        }
-        console.warn('⚠️  Reacher unavailable — using truemail-go');
-        if (await ensureTruemailReady()) return 'truemail-go';
-        throw new Error('Reacher down. Run: docker compose up -d  OR  npm start');
-    }
-
-    if (cachedEngine) return cachedEngine;
-    if (await ensureTruemailReady()) {
-        cachedEngine = 'truemail-go';
-        return cachedEngine;
-    }
-    throw new Error('No verifier available. Run: npm start');
+    // Only Reacher exists now. The pool raises a precise error when no backend
+    // is usable, so there is nothing to probe here.
+    cachedEngine = 'reacher';
+    return 'reacher';
 }
 
 async function verifyWithReacherTimed(email) {
@@ -162,34 +113,8 @@ async function verifyWithReacherTimed(email) {
 }
 
 async function verifyEmailCombined(email) {
-    const engine = await resolveEngine();
-    let report;
-
-    try {
-        if (engine === 'reacher') {
-            report = await verifyWithReacherTimed(email);
-        } else {
-            report = await verifyWithGo(email);
-        }
-    } catch (primaryErr) {
-        const failedReacher = engine === 'reacher';
-        const canFallback =
-            failedReacher &&
-            (primaryErr.code === 'ECONNABORTED' || String(primaryErr.message).includes('timeout'));
-
-        if (canFallback || failedReacher) {
-            if (await ensureTruemailReady()) {
-                console.warn(`Reacher failed for ${email} — using truemail-go`);
-                report = await verifyWithGo(email);
-                report.engine = 'truemail-go';
-                report.fallback_from = 'reacher';
-            } else {
-                throw new Error(`Reacher failed: ${primaryErr.message}. truemail-go is not running.`);
-            }
-        } else {
-            throw new Error(`truemail-go failed: ${primaryErr.message}`);
-        }
-    }
+    // No fallback engine: if every Reacher fails, the check fails loudly.
+    const report = await verifyWithReacherTimed(email);
 
     // Microsoft 365 answers SMTP probes unreliably; ask the account endpoint
     // instead so a real mailbox is never reported as invalid.
@@ -199,35 +124,29 @@ async function verifyEmailCombined(email) {
         console.warn('Microsoft account lookup failed for ' + email + ': ' + error.message);
     }
 
-    recordEngineUse(report.engine === 'reacher' ? 'reacher' : 'truemail-go', email);
+    recordEngineUse('reacher', email);
     return wrapResult(report, email);
 }
 
 async function checkBackendHealth() {
     const health = {
+        // Kept for older clients; truemail-go no longer exists.
         go: false,
+        go_url: '',
         reacher: false,
         engine: null,
-        active_engine: null,
+        active_engine: 'reacher',
         smtp_port: null,
-        go_url: GO_BASE,
         reacher_url: REACHER_BASE,
-        mode: ENGINE_MODE,
+        mode: 'reacher',
     };
-
-    try {
-        const { data } = await axios.get(`${GO_BASE}/health`, { timeout: 5000 });
-        health.go = data?.status === 'ok';
-        health.smtp_port = data?.smtp_port || null;
-        if (health.go) health.engine = data?.engine || 'truemail-go';
-    } catch (_) {}
 
     health.reacher_backends = await reacherPool.loadBackends().then(backends => Promise.all(
         backends.map(async backend => {
             const cached = reacherPool.cachedHealthFor(backend.id);
             const fresh = cached && Date.now() - cached.checkedAt < 15000;
-            const status = fresh || ENGINE_MODE === 'truemail'
-                ? (cached || { ok: false, version: '', latencyMs: 0, error: 'not checked yet' })
+            const status = fresh
+                ? cached
                 : await reacherPool.probe(backend);
             return {
                 id: backend.id,
@@ -243,12 +162,7 @@ async function checkBackendHealth() {
     ));
 
     health.reacher = health.reacher_backends.some(backend => backend.ok);
-
-    try {
-        health.active_engine = await resolveEngine();
-    } catch (_) {
-        health.active_engine = health.go ? 'truemail-go' : null;
-    }
+    health.engine = health.reacher ? 'reacher' : null;
 
     return health;
 }
@@ -260,8 +174,6 @@ function resetEngineCache() {
 module.exports = {
     verifyEmailCombined,
     checkBackendHealth,
-    verifyWithGo,
-    GO_BASE,
     mapStatus,
     resolveEngine,
     resetEngineCache,

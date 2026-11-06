@@ -5,7 +5,6 @@ const helmet = require('helmet');
 const path = require('path');
 const connectDB = require('./config/db');
 const { errorHandler } = require('./middlewares/errorMiddleware');
-const { ensureGoVerifier, stopGoVerifier } = require('./utils/spawnGo');
 const { resetEngineCache } = require('./utils/verificationEngine');
 
 dotenv.config();
@@ -42,9 +41,6 @@ async function start() {
     console.log('📦 Connecting to database...');
     await connectDB();
 
-    console.log('🔧 Starting truemail-go verifier (required)...');
-    await ensureGoVerifier();
-
     // Server-side bulk runs keep going after the browser closes.
     require('./utils/jobRunner').start();
 
@@ -60,6 +56,5 @@ start().catch(err => {
 });
 
 process.on('SIGINT', () => {
-    stopGoVerifier();
     process.exit(0);
 });

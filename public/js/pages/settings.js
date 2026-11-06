@@ -7,7 +7,7 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
             const tbody = document.getElementById('engineCompareBody');
             const rows = [
                 { name: 'Reacher (Docker)', smtp: 'Yes — best for bulk', used: 'Yes — primary', cls: 'table-success' },
-                { name: 'truemail-go', smtp: 'Yes — full RCPT + codes', used: 'Yes — fallback', cls: '' },
+                { name: 'truemail-go', smtp: 'Removed', used: 'No — disabled', cls: '' },
                 { name: 'AfterShip email-verifier', smtp: 'Lists only', used: 'Yes (with truemail)', cls: '' },
                 { name: 'validate_email', smtp: 'No', used: 'No', cls: '' },
                 { name: 'KnowEmail.exe', smtp: 'Partial', used: 'No — desktop only', cls: '' },
@@ -38,7 +38,6 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
                     text.textContent = `Active engine: ${active}`;
                     const parts = [];
                     if (backends.length) parts.push(`${healthy.length}/${backends.length} Reacher backends healthy`);
-                    if (d.go) parts.push('truemail-go ready (fallback)');
                     detail.innerHTML = `
                         <strong>Mode:</strong> ${d.mode || 'auto'}<br>
                         ${parts.join(' · ') || 'No verifier reachable'}
@@ -46,7 +45,7 @@ const PROVIDERS = ['gmail', 'yahoo', 'microsoft', 'other'];
                 } else {
                     el.className = 'engine-status offline mb-3';
                     text.textContent = 'No verifier running';
-                    detail.innerHTML = `Add a Reacher backend below, or start the Go verifier with <code>npm start</code>.`;
+                    detail.innerHTML = 'Add a Reacher backend below — it is the only engine.';
                 }
             } catch {
                 el.className = 'engine-status offline mb-3';
