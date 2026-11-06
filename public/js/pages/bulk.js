@@ -201,19 +201,8 @@ const uploadForm    = document.getElementById('uploadForm');
             if (restoring) return;
             restoring = true;
             try {
-                // 1. the run this browser was last attached to
-                const saved = BulkJob.loadBulkJob();
-                if (saved && saved.serverJobId) {
-                    try {
-                        await attachToJob(saved.serverJobId, saved);
-                        return;
-                    } catch (reason) {
-                        // The job was cleared elsewhere: forget the local copy.
-                        BulkJob.clear();
-                    }
-                }
-
-                // 2. any active run on the server (new browser, other device)
+                // An active run always wins — even when this browser still holds
+                // the finished result of an older run.
                 const { data: jobs } = await axios.get('/api/verify/jobs');
                 const list = Array.isArray(jobs) ? jobs : [];
                 const active = list.find(job => ['queued', 'running', 'paused'].includes(job.status));
@@ -222,7 +211,17 @@ const uploadForm    = document.getElementById('uploadForm');
                     return;
                 }
 
-                // 3. last finished run, so the page is not empty
+                // Nothing running: fall back to what this browser was showing.
+                const saved = BulkJob.loadBulkJob();
+                if (saved && saved.serverJobId) {
+                    try {
+                        await attachToJob(saved.serverJobId, saved);
+                        return;
+                    } catch (reason) {
+                        BulkJob.clear();
+                    }
+                }
+
                 const finished = list.find(job => job.status === 'done' || job.status === 'cancelled');
                 if (finished) await attachToJob(finished.id || finished._id);
             } catch (error) {
